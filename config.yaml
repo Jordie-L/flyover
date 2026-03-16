@@ -1,0 +1,43 @@
+location:
+  latitude: 42.86766264000681
+  longitude: -85.62075409291646
+  name: "Grand Rapids"
+
+flight_tracking:
+  outer_radius_km: 8.0
+  inner_radius_km: 3.0
+  max_altitude_ft: 10000
+  poll_interval_seconds: 10
+  api_lag_buffer_seconds: 20
+  display_duration_seconds: 30
+
+weather:
+  openweathermap_api_key: ""
+  poll_interval_minutes: 15
+
+display:
+  brightness_schedule:
+    - time: "06:00"
+      brightness: 20
+    - time: "08:00"
+      brightness: 80
+    - time: "20:00"
+      brightness: 80
+    - time: "22:00"
+      brightness: 20
+  matrix:
+    rows: 64
+    cols: 64
+    chain_length: 1
+    parallel: 1
+    hardware_mapping: "adafruit-hat"
+    gpio_slowdown: 4
+
+web:
+  port: 80
+  stats_retention_days: 90
+
+database:
+  path: "/var/lib/flyover/flyover.db"
+
+timezone: "America/Detroit"

@@ -1,0 +1,18 @@
+[Unit]
+Description=FlyOver Plane Tracker
+After=network.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/home/jordie/flyover/.venv/bin/python /home/jordie/flyover/main.py
+WorkingDirectory=/home/jordie/flyover
+User=root
+Environment="REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

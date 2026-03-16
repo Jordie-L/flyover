@@ -1,0 +1,6 @@
+pyyaml
+flask
+requests
+qrcode[pil]
+certifi
+pillow

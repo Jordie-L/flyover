@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlyOver Setup</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+        .subtitle { text-align: center; color: #8888aa; margin-bottom: 24px; font-size: 14px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px; }
+        select, input[type="password"] {
+            width: 100%; padding: 12px; border: 1px solid #2a2a4a;
+            border-radius: 8px; background: #0f3460; color: #fff;
+            font-size: 16px; margin-bottom: 16px;
+        }
+        button {
+            width: 100%; padding: 14px; border: none; border-radius: 8px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-primary { background: #0077ff; color: #fff; margin-bottom: 12px; }
+        .btn-primary:hover { background: #0055cc; }
+        .btn-secondary { background: #2a2a4a; color: #ccc; }
+        .btn-secondary:hover { background: #3a3a5a; }
+        .status {
+            text-align: center; margin-top: 16px; padding: 12px;
+            border-radius: 8px; display: none;
+        }
+        .status.success { display: block; background: #0a3d1a; color: #4caf50; }
+        .status.error { display: block; background: #3d0a0a; color: #f44336; }
+        .status.info { display: block; background: #0a1a3d; color: #64b5f6; }
+        .scanning-notice {
+            text-align: center; color: #ffab40; font-size: 13px;
+            margin-top: 8px; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>FlyOver</h1>
+        <p class="subtitle">Connect to your WiFi network</p>
+
+        <label for="ssid">Network</label>
+        <select id="ssid">
+            {% for net in ssids %}
+            <option value="{{ net.ssid }}">{{ net.ssid }} ({{ net.signal }}%)</option>
+            {% endfor %}
+            {% if not ssids %}
+            <option value="">No networks found</option>
+            {% endif %}
+        </select>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter WiFi password">
+
+        <button class="btn-primary" onclick="connect()">Connect</button>
+        <button class="btn-secondary" onclick="rescan()">Rescan Networks</button>
+
+        <div class="scanning-notice" id="scanning">
+            Scanning for networks... The hotspot will be unavailable for about 30 seconds.
+            Stay on this page — it will reconnect automatically.
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const scanningEl = document.getElementById('scanning');
+
+        function showStatus(msg, type) {
+            statusEl.className = 'status ' + type;
+            statusEl.textContent = msg;
+        }
+
+        async function connect() {
+            const ssid = document.getElementById('ssid').value;
+            const password = document.getElementById('password').value;
+            if (!ssid) return showStatus('Please select a network', 'error');
+
+            showStatus('Connecting...', 'info');
+            try {
+                const resp = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ssid, password}),
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showStatus(
+                        "You're all set! Connect to your WiFi and visit http://flyover.local to see stats.",
+                        'success'
+                    );
+                } else {
+                    showStatus('Connection failed. Check password and try again.', 'error');
+                }
+            } catch (e) {
+                showStatus('Connection failed. The device may be reconnecting.', 'error');
+            }
+        }
+
+        async function rescan() {
+            scanningEl.style.display = 'block';
+            showStatus('', '');
+
+            try {
+                const resp = await fetch('/api/rescan', {method: 'POST'});
+                const data = await resp.json();
+                updateSSIDList(data.ssids);
+                scanningEl.style.display = 'none';
+            } catch (e) {
+                // AP went down, poll until it comes back
+                pollForAP();
+            }
+        }
+
+        function updateSSIDList(ssids) {
+            const select = document.getElementById('ssid');
+            select.innerHTML = '';
+            if (!ssids || ssids.length === 0) {
+                select.innerHTML = '<option value="">No networks found</option>';
+                return;
+            }
+            ssids.forEach(net => {
+                const opt = document.createElement('option');
+                opt.value = net.ssid;
+                opt.textContent = net.ssid + ' (' + net.signal + '%)';
+                select.appendChild(opt);
+            });
+        }
+
+        function pollForAP() {
+            const interval = setInterval(async () => {
+                try {
+                    const resp = await fetch('/api/status');
+                    if (resp.ok) {
+                        clearInterval(interval);
+                        scanningEl.style.display = 'none';
+                        // Refresh page to get updated SSID list
+                        window.location.reload();
+                    }
+                } catch (e) {
+                    // Still down, keep polling
+                }
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
