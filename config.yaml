@@ -26,8 +26,8 @@ display:
     - time: "22:00"
       brightness: 20
   matrix:
-    rows: 64
-    cols: 64
+    rows: 32
+    cols: 32
     chain_length: 1
     parallel: 1
     hardware_mapping: "adafruit-hat"

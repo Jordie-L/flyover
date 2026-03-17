@@ -1,4 +1,4 @@
-"""Display service — drives the 64x64 RGB LED matrix."""
+"""Display service — drives the 32x32 RGB LED matrix."""
 
 import logging
 import os
@@ -62,12 +62,11 @@ class DisplayService:
         self.matrix = RGBMatrix(options=options)
         self.canvas = self.matrix.CreateFrameCanvas()
 
-        # Load BDF fonts
+        # Load BDF fonts — smaller fonts for 32x32
         for name, filename in [
-            ("large", "9x18B.bdf"),
-            ("medium", "7x13B.bdf"),
-            ("small", "5x8.bdf"),
-            ("tiny", "4x6.bdf"),
+            ("large", "7x13B.bdf"),
+            ("medium", "5x8.bdf"),
+            ("small", "4x6.bdf"),
         ]:
             font = graphics.Font()
             font_path = os.path.join(FONT_DIR, filename)
@@ -99,61 +98,62 @@ class DisplayService:
             return datetime.now()
 
     def _draw_clock(self):
-        """Draw clock/weather mode."""
+        """Draw clock/weather mode on 32x32 display.
+
+        Layout:
+          Row ~10: Time (e.g. "1:23p") in large font
+          Row ~20: Temp (e.g. "72°F") in medium font
+          Row ~28: Rain % (e.g. "R:15%") in small font
+        """
         g = self._graphics
         self.canvas.Clear()
 
         now = self._get_time()
         time_str = now.strftime("%-I:%M")
-        am_pm = now.strftime("%p").lower()
+        am_pm = now.strftime("%p")[0].lower()  # just "a" or "p" to save space
 
-        # Time — large white text
         white = g.Color(255, 255, 255)
         font_large = self._fonts.get("large")
         font_medium = self._fonts.get("medium")
         font_small = self._fonts.get("small")
-        font_tiny = self._fonts.get("tiny")
 
+        # Time — large white text
         if font_large:
-            g.DrawText(self.canvas, font_large, 2, 18, white, time_str)
-        if font_tiny:
-            g.DrawText(self.canvas, font_tiny, 50, 18, white, am_pm)
+            g.DrawText(self.canvas, font_large, 1, 11, white, time_str)
+            # AM/PM indicator — small, tucked right
+            if font_small:
+                g.DrawText(self.canvas, font_small, 28, 11, white, am_pm)
 
         # Weather data
         weather = self.weather_service.current_weather
         if weather:
             temp_str = f"{weather['temp_f']:.0f}°F"
-            rain_str = f"{weather['rain_chance_pct']:.0f}%"
+            rain_pct = weather["rain_chance_pct"]
+            rain_str = f"R:{rain_pct:.0f}%"
 
             cyan = g.Color(0, 200, 255)
             if font_medium:
-                g.DrawText(self.canvas, font_medium, 2, 38, cyan, temp_str)
+                g.DrawText(self.canvas, font_medium, 1, 21, cyan, temp_str)
 
-            # Rain chance: yellow if <50%, orange if >=50%
-            rain_pct = weather["rain_chance_pct"]
-            if rain_pct >= 50:
-                rain_color = g.Color(255, 140, 0)
-            else:
-                rain_color = g.Color(255, 255, 0)
-
+            rain_color = g.Color(255, 140, 0) if rain_pct >= 50 else g.Color(255, 255, 0)
             if font_small:
-                g.DrawText(self.canvas, font_small, 2, 52, rain_color, f"Rain:{rain_str}")
+                g.DrawText(self.canvas, font_small, 1, 29, rain_color, rain_str)
         else:
-            # No weather data yet
             gray = g.Color(80, 80, 80)
             if font_small:
-                g.DrawText(self.canvas, font_small, 2, 38, gray, "No weather")
-
-        # Date at bottom
-        date_str = now.strftime("%b %-d")
-        dim_white = g.Color(120, 120, 120)
-        if font_tiny:
-            g.DrawText(self.canvas, font_tiny, 2, 62, dim_white, date_str)
+                g.DrawText(self.canvas, font_small, 1, 21, gray, "No wthr")
 
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
     def _draw_flight(self, flight):
-        """Draw flight info mode."""
+        """Draw flight info on 32x32 display.
+
+        Layout:
+          Row ~8:  Origin code (e.g. "LAX")
+          Row ~16: Arrow ">"
+          Row ~24: Destination code (e.g. "GRR")
+          Row ~31: Callsign in small font
+        """
         g = self._graphics
         self.canvas.Clear()
 
@@ -169,32 +169,27 @@ class DisplayService:
         font_medium = self._fonts.get("medium")
         font_small = self._fonts.get("small")
 
-        # Origin airport code — top
         if font_large and origin:
-            g.DrawText(self.canvas, font_large, 2, 18, green, origin)
+            g.DrawText(self.canvas, font_large, 1, 10, green, origin)
 
-        # Arrow in middle
         if font_medium:
-            g.DrawText(self.canvas, font_medium, 24, 33, dim_green, "->")
+            g.DrawText(self.canvas, font_medium, 12, 18, dim_green, ">")
 
-        # Destination airport code
         if font_large and dest:
-            g.DrawText(self.canvas, font_large, 2, 48, green, dest)
+            g.DrawText(self.canvas, font_large, 1, 26, green, dest)
 
-        # Callsign at bottom
         if font_small and callsign:
-            g.DrawText(self.canvas, font_small, 2, 60, white, callsign)
+            g.DrawText(self.canvas, font_small, 1, 31, white, callsign[:8])
 
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
     def _draw_setup_qr(self):
-        """Draw QR code for captive portal setup."""
+        """Draw QR code for captive portal setup on 32x32 display."""
         import qrcode
 
         g = self._graphics
         self.canvas.Clear()
 
-        # Generate QR code for portal URL
         ip = self.wifi_manager.get_ap_ip() if self.wifi_manager else "192.168.4.1"
         url = f"http://{ip}"
 
@@ -209,22 +204,16 @@ class DisplayService:
         qr_img = qr.make_image(fill_color="white", back_color="black")
         qr_img = qr_img.convert("RGB")
 
-        # Center QR on matrix
+        # Center QR on 32x32 matrix
         w, h = qr_img.size
-        x_offset = (64 - w) // 2
-        y_offset = max(0, (48 - h) // 2)  # leave room for text at bottom
+        x_offset = (32 - w) // 2
+        y_offset = (32 - h) // 2
 
         for y in range(h):
             for x in range(w):
                 r, gg, b = qr_img.getpixel((x, y))
-                if r > 128:  # white pixel
+                if r > 128:
                     self.canvas.SetPixel(x + x_offset, y + y_offset, 255, 255, 255)
-
-        # "SCAN TO SETUP" text at bottom
-        white = g.Color(255, 255, 255)
-        font_tiny = self._fonts.get("tiny")
-        if font_tiny:
-            g.DrawText(self.canvas, font_tiny, 2, 60, white, "SCAN TO SETUP")
 
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
@@ -274,7 +263,7 @@ class DisplayService:
             else:
                 self._draw_clock()
 
-            # ~30 FPS would be overkill for this display; 10 FPS is fine
+            # ~10 FPS is fine for this display
             time.sleep(0.1)
 
     def stop(self):
