@@ -172,15 +172,29 @@ class WiFiManager:
         return ssids
 
     def _is_connected(self):
-        """Check if we have an active WiFi client connection."""
+        """Check if we have an active WiFi client connection with internet."""
         output, rc = self._run_nmcli([
             "-t", "-f", "TYPE,STATE",
             "device", "status",
         ])
+        wifi_up = False
         for line in output.splitlines():
             if "wifi" in line and "connected" in line:
-                return True
-        return False
+                wifi_up = True
+                break
+
+        if not wifi_up:
+            return False
+
+        # WiFi link is up — verify actual internet reachability
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "3", "1.1.1.1"],
+                capture_output=True, timeout=5,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            return False
 
     def run(self):
         logger.info("WiFi manager starting")
