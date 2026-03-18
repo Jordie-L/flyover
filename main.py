@@ -51,7 +51,7 @@ def main():
     # Initialize services
     wifi_manager = WiFiManager(config)
     weather_service = WeatherService(config, db)
-    flight_tracker = FlightTracker(config, flight_queue)
+    flight_tracker = FlightTracker(config, flight_queue, db)
     display_service = DisplayService(config, flight_queue, weather_service, wifi_manager)
     web_server = WebServer(config, db, wifi_manager, weather_service)
 

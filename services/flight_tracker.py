@@ -12,6 +12,72 @@ logger = logging.getLogger(__name__)
 
 EARTH_RADIUS_KM = 6371.0
 
+# Common ICAO→IATA mappings (especially airports near Grand Rapids and major hubs).
+# For US airports not in this dict, we strip the leading "K" as a fallback.
+ICAO_TO_IATA = {
+    # Michigan
+    "KGRR": "GRR", "KLAN": "LAN", "KDTW": "DTW", "KMBS": "MBS",
+    "KAZO": "AZO", "KFNT": "FNT", "KTVC": "TVC", "KMKG": "MKG",
+    "KCIU": "CIU", "KAPN": "APN", "KESC": "ESC", "KPLN": "PLN",
+    "KMBL": "MBL", "KCAD": "CAD",
+    # Major US hubs
+    "KATL": "ATL", "KORD": "ORD", "KDFW": "DFW", "KDEN": "DEN",
+    "KLAX": "LAX", "KJFK": "JFK", "KSFO": "SFO", "KSEA": "SEA",
+    "KLAS": "LAS", "KMCO": "MCO", "KEWR": "EWR", "KMSP": "MSP",
+    "KBOS": "BOS", "KPHL": "PHL", "KLGA": "LGA", "KFLL": "FLL",
+    "KIAD": "IAD", "KDCA": "DCA", "KBWI": "BWI", "KSLC": "SLC",
+    "KSAN": "SAN", "KTPA": "TPA", "KPDX": "PDX", "KSTL": "STL",
+    "KBNA": "BNA", "KMCI": "MCI", "KRDU": "RDU", "KCLT": "CLT",
+    "KPIT": "PIT", "KCMH": "CMH", "KIND": "IND", "KCVG": "CVG",
+    "KMKE": "MKE", "KMDW": "MDW", "KAUS": "AUS", "KHOU": "HOU",
+    "KIAH": "IAH", "KOAK": "OAK", "KSJC": "SJC", "KSMF": "SMF",
+    "KONT": "ONT", "KPHX": "PHX", "KABQ": "ABQ", "KMEM": "MEM",
+    "KPBI": "PBI", "KRSW": "RSW", "KSAT": "SAT", "KOMA": "OMA",
+    "KDSM": "DSM", "KBUF": "BUF", "KSYR": "SYR", "KROC": "ROC",
+    "KPVD": "PVD", "KBDL": "BDL", "KALB": "ALB", "KRIC": "RIC",
+    "KORF": "ORF", "KJAX": "JAX", "KCHS": "CHS", "KSAV": "SAV",
+    "KGSO": "GSO", "KLEX": "LEX", "KSDF": "SDF", "KDAY": "DAY",
+    "KTOL": "TOL", "KCLE": "CLE",
+    # Canada
+    "CYYZ": "YYZ", "CYUL": "YUL", "CYVR": "YVR", "CYOW": "YOW",
+    "CYWG": "YWG", "CYEG": "YEG", "CYYC": "YYC", "CYHZ": "YHZ",
+    # Mexico
+    "MMMX": "MEX", "MMUN": "CUN", "MMGL": "GDL",
+    # Major international
+    "EGLL": "LHR", "EGKK": "LGW", "EHAM": "AMS", "EDDF": "FRA",
+    "LFPG": "CDG", "LEMD": "MAD", "LIRF": "FCO", "LSZH": "ZRH",
+    "EIDW": "DUB", "LEBL": "BCN", "LPPT": "LIS", "EKCH": "CPH",
+    "ESSA": "ARN", "EFHK": "HEL", "ENGM": "OSL", "EPWA": "WAW",
+    "LOWW": "VIE", "LKPR": "PRG", "LHBP": "BUD", "LTFM": "IST",
+    "OMDB": "DXB", "VHHH": "HKG", "WSSS": "SIN", "RJTT": "HND",
+    "RJAA": "NRT", "RKSI": "ICN", "ZBAA": "PEK", "ZSPD": "PVG",
+    "YSSY": "SYD", "YMML": "MEL", "NZAA": "AKL",
+    "SBGR": "GRU", "SCEL": "SCL", "SAEZ": "EZE", "SKBO": "BOG",
+    "MPTO": "PTY", "TNCM": "SXM", "TJSJ": "SJU", "MKJP": "KIN",
+}
+
+
+def icao_to_iata(icao_code):
+    """Convert ICAO airport code to IATA. Returns best guess or original."""
+    if not icao_code:
+        return None
+    icao_code = icao_code.strip().upper()
+
+    # Direct lookup
+    if icao_code in ICAO_TO_IATA:
+        return ICAO_TO_IATA[icao_code]
+
+    # US airports: K + 3 letter IATA code (e.g., KLAX → LAX)
+    if len(icao_code) == 4 and icao_code.startswith("K") and icao_code[1:].isalpha():
+        return icao_code[1:]
+
+    # Canadian airports: CY + 2 letters → Y + 2 letters (e.g., CYYZ → YYZ)
+    if len(icao_code) == 4 and icao_code.startswith("CY"):
+        return icao_code[1:]
+
+    # Return original ICAO if no conversion found
+    return icao_code
+
 
 def haversine(lat1, lon1, lat2, lon2):
     """Great-circle distance in km between two lat/lon points."""
@@ -32,9 +98,10 @@ def bearing_between(lat1, lon1, lat2, lon2):
 
 
 class FlightTracker:
-    def __init__(self, config, flight_queue):
+    def __init__(self, config, flight_queue, db=None):
         self.config = config
         self.flight_queue = flight_queue
+        self.db = db
         self._stop = threading.Event()
 
         loc = config["location"]
@@ -80,6 +147,7 @@ class FlightTracker:
             return None, False
 
     def _fetch_route(self, callsign):
+        """Fetch route from OpenSky and convert ICAO codes to IATA."""
         callsign = callsign.strip()
         if not callsign:
             return None, None
@@ -92,7 +160,15 @@ class FlightTracker:
                 data = resp.json()
                 route = data.get("route", [])
                 if len(route) >= 2:
-                    return route[0], route[-1]
+                    origin_icao = route[0]
+                    dest_icao = route[-1]
+                    origin = icao_to_iata(origin_icao)
+                    dest = icao_to_iata(dest_icao)
+                    logger.info(
+                        "Route for %s: %s→%s (ICAO: %s→%s)",
+                        callsign, origin, dest, origin_icao, dest_icao,
+                    )
+                    return origin, dest
             return None, None
         except requests.RequestException:
             return None, None
@@ -217,6 +293,13 @@ class FlightTracker:
                         )
                     except queue.Full:
                         pass
+
+                    # Log to database
+                    if self.db:
+                        try:
+                            self.db.insert_flight(aircraft)
+                        except Exception as e:
+                            logger.error("DB insert failed: %s", e)
 
         # Clean up aircraft no longer seen
         for icao24 in list(self.tracked.keys()):

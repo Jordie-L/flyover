@@ -190,6 +190,18 @@ For resilience against sudden power loss:
 3. Disable swap: `sudo dphys-swapfile swapoff && sudo systemctl disable dphys-swapfile`
 4. Add `fastboot noswap ro` to `/boot/firmware/cmdline.txt`
 
+## Display Modes
+
+The 32x32 matrix has three display modes:
+
+- **Clock/Weather (default):** Time in 12-hour format, AM/PM, temperature, weather icon (pixel art sprite mapped from OpenWeatherMap icon codes), and rain probability.
+- **Flight (triggered automatically):** Shows origin airport code, arrow, destination airport code, and callsign. Holds for 30 seconds. If a closer/lower plane appears, it preempts the current display. Otherwise queued flights show for 10 seconds each.
+- **Setup (WiFi AP mode):** QR code pointing to the captive portal for WiFi configuration.
+
+## GPIO Buttons
+
+No GPIO buttons are currently implemented. All interaction is through the web interface (captive portal for WiFi setup, dashboard for stats). The Adafruit Matrix Bonnet has 4 GPIO-accessible buttons on the board — these could be used in a future version for manual brightness control, display mode cycling, or forcing a WiFi rescan, but they are not wired up in software yet.
+
 ## Known Gotchas
 
 1. **Venv isolation is total** — system pip packages are invisible. Install everything with `/home/jordie/flyover/.venv/bin/pip`.
