@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from flyover.config import Config, ConfigError, parse_config
+from flyover.config import ConfigError, parse_config
 from flyover.control import config_edit
 from flyover.control.config_edit import apply_changes, format_value, update_config_text
 

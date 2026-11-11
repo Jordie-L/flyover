@@ -19,7 +19,7 @@ from flyover.display.backends.png import PngBackend
 from flyover.display.samples import build_samples, sample_weather
 from flyover.display.scenes.base import SIZE
 from flyover.config import Config
-from flyover.state import RunPaths, read_json, write_json_atomic
+from flyover.state import RunPaths, read_json
 
 SNAPSHOTS = Path(__file__).parent / "snapshots"
 SAMPLES = build_samples()
@@ -304,3 +304,22 @@ def test_without_a_location_the_clock_still_runs_and_the_feed_explains_why(make_
     assert "location" in app._feed.poller.error
     app.tick()  # still renders the clock
     assert app._last_status["scene"] == "idle"
+
+
+def test_a_persistent_failure_is_logged_once_not_twice_a_second(make_app, monkeypatch, caplog):
+    import logging
+
+    import flyover.display.app as app_module
+
+    monkeypatch.setattr(app_module, "BOOT_SECONDS", 0.0)
+    monkeypatch.setattr(app_module, "TICK_S", 0.005)
+    app = make_app()
+    app.backend.show = lambda *a: (_ for _ in ()).throw(OSError("read-only file system"))
+    stop = threading.Event()
+    thread = threading.Thread(target=app.run, args=(stop,))
+    with caplog.at_level(logging.ERROR):
+        thread.start()
+        time.sleep(0.2)  # dozens of failing ticks
+        stop.set()
+        thread.join(5)
+    assert caplog.text.count("frame failed") == 1

@@ -95,7 +95,7 @@ def _build(name: str) -> Image.Image:
         _moon(d, 1, 0)
         _cloud(d, 2, 5, _CLOUD_DARK)
     elif name == "fog":
-        for y, (x0, x1) in zip((3, 6, 9, 12), ((2, 11), (4, 13), (1, 10), (3, 12))):
+        for y, (x0, x1) in zip((3, 6, 9, 12), ((2, 11), (4, 13), (1, 10), (3, 12)), strict=True):
             d.line((x0, y, x1, y), fill=_FOG)
     elif name == "rain":
         _cloud(d, 1, 0, _CLOUD_DARK)

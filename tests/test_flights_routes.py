@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from flyover.config import Config, Flights, LocationNotSet, parse_config
+from flyover.config import LocationNotSet, parse_config
 from flyover.models import Aircraft
 from flyover.providers import routes
 from flyover.providers.flights import (FlightFeed, parse_aircraft, parse_reply,

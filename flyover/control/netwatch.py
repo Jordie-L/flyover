@@ -99,11 +99,15 @@ class NetWatch:
             self._emit()
 
     def run(self, stop: threading.Event) -> None:
+        last_error = None
         while not stop.is_set():
             try:
                 self.tick()
-            except Exception:  # the watcher must never die; log and try again
-                log.exception("network watcher error")
+                last_error = None
+            except Exception as exc:  # the watcher must never die; log (once per distinct error)
+                if repr(exc) != last_error:
+                    log.exception("network watcher error")
+                    last_error = repr(exc)
             stop.wait(1.0)
         with self._op_lock:
             if self._hotspot_up:

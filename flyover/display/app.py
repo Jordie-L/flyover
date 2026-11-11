@@ -14,10 +14,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from PIL import Image
-
-from .. import __version__, clock
-from .. import geo
+from .. import __version__, clock, geo
 from ..config import Config, ConfigStore, LocationNotSet
 from ..models import FlightView
 from ..providers import weather
@@ -26,6 +23,7 @@ from ..providers.poller import Poller
 from ..providers.routes import RouteResolver
 from ..selector import Pick, Selector
 from ..state import RunPaths, read_json, write_json_atomic
+from . import fonts
 from .backends import Backend, create_backend
 from .scenes.base import Context, Scene, blank
 from .scenes.boot import BootScene
@@ -62,6 +60,7 @@ class DisplayApp:
         self._time_trusted = time_trusted
         self._epoch = epoch
 
+        fonts.preload()  # before any privilege drop, and so a bad install fails here, loudly
         self._config = ConfigStore(config_path)
         self._last_location = self.cfg.location
         self.backend = backend or create_backend(
@@ -101,10 +100,10 @@ class DisplayApp:
     # -- data -------------------------------------------------------------
 
     def _poll_weather(self) -> weather.Weather:
-        loc = self.cfg.location
-        if not self.cfg.location_is_set:
+        cfg = self.cfg
+        if not cfg.location_is_set:
             raise LocationNotSet("location is not set")
-        return self._fetch_weather(loc.latitude, loc.longitude)
+        return self._fetch_weather(cfg.location.latitude, cfg.location.longitude)
 
     def _on_weather(self, value: weather.Weather) -> None:
         if value.timezone:
@@ -116,8 +115,7 @@ class DisplayApp:
 
     # -- one frame --------------------------------------------------------
 
-    def _context(self) -> tuple[Context, str]:
-        cfg = self.cfg
+    def _context(self, cfg: Config) -> tuple[Context, str]:
         now = clock.now_in(clock.resolve_timezone(cfg.location.timezone, self._saved_tz))
         trusted = self._time_trusted()
         mode = mode_for(now, trusted, cfg.display)
@@ -163,11 +161,15 @@ class DisplayApp:
             self._overhead_today.add(view.aircraft.hex)
 
     def _choose_scene(self, ctx: Context) -> Scene:
+        """Setup screen, else the overhead flight, else the idle screen.
+
+        When it returns the flight scene, the flight to draw has been put in ``ctx.flight``.
+        """
         if self._needs_setup_screen(ctx.net):
             return self._setup
-        loc = self.cfg.location
+        cfg = ctx.config
         pick = self._selector.update(
-            self._feed.aircraft, ctx.epoch, (loc.latitude, loc.longitude), self.cfg.flights
+            self._feed.aircraft, ctx.epoch, (cfg.location.latitude, cfg.location.longitude), cfg.flights
         )
         if pick is None:
             return self._idle
@@ -176,18 +178,20 @@ class DisplayApp:
         return self._flight
 
     def tick(self) -> None:
-        self._check_location(self.cfg)
-        ctx, mode = self._context()
+        cfg = self.cfg  # read once: every later step in this frame sees the same configuration
+        self._check_location(cfg)
+        ctx, mode = self._context(cfg)
         self._feed.quiet = mode == "off"
         if mode == "off":
             scene_name, frame = "off", blank()[0]
         else:
             scene = self._choose_scene(ctx)
             scene_name, frame = scene.name, scene.render(ctx)
-        self.backend.show(frame, brightness_for(mode, self.cfg.display))
-        self._write_status(scene_name, mode, ctx)
+        brightness = brightness_for(mode, cfg.display)
+        self.backend.show(frame, brightness)
+        self._write_status(scene_name, mode, brightness, ctx)
 
-    def _write_status(self, scene: str, mode: str, ctx: Context) -> None:
+    def _write_status(self, scene: str, mode: str, brightness: int, ctx: Context) -> None:
         w = self._weather.latest
         flights = self._feed.poller
         status = {
@@ -196,9 +200,9 @@ class DisplayApp:
             "backend": self.backend.name,
             "scene": scene,
             "mode": mode,
-            "brightness": brightness_for(mode, self.cfg.display),
+            "brightness": brightness,
             "time_trusted": ctx.time_trusted,
-            "location_set": self.cfg.location_is_set,
+            "location_set": ctx.config.location_is_set,
             "weather": {
                 "ok": w is not None and self._weather.error is None,
                 "fetched_at": w.fetched_at if w else None,
@@ -218,8 +222,9 @@ class DisplayApp:
     # -- lifecycle --------------------------------------------------------
 
     def show_boot(self, stop: threading.Event) -> None:
-        ctx, _ = self._context()
-        self.backend.show(self._boot.render(ctx), self.cfg.display.brightness)
+        cfg = self.cfg
+        ctx, _ = self._context(cfg)
+        self.backend.show(self._boot.render(ctx), cfg.display.brightness)
         stop.wait(BOOT_SECONDS)
 
     def run(self, stop: threading.Event) -> None:
@@ -227,12 +232,19 @@ class DisplayApp:
         self._feed.start()
         self._routes.start()
         try:
-            self.show_boot(stop)
+            try:
+                self.show_boot(stop)
+            except Exception:  # the splash is cosmetic: never let it stop the real display
+                log.exception("boot screen failed")
+            last_error = None
             while not stop.is_set():
                 try:
                     self.tick()
-                except Exception:  # a scene bug must not blank the display for good
-                    log.exception("frame failed")
+                    last_error = None
+                except Exception as exc:  # a scene bug must not blank the display for good
+                    if repr(exc) != last_error:  # ...nor flood the log: report each failure once
+                        log.exception("frame failed")
+                        last_error = repr(exc)
                 stop.wait(TICK_S)
         finally:
             self.close()

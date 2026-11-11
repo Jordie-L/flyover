@@ -15,7 +15,7 @@ brightness setting still dims it.
 from __future__ import annotations
 
 import segno
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from .. import fonts
 from .base import SIZE, Context, blank

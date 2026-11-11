@@ -142,3 +142,9 @@ def load_font(name: str) -> BdfFont:
             f"font file {path} not found (set FLYOVER_FONT_DIR if the fonts live elsewhere)"
         ) from None
     return parse_bdf(name, text)
+
+
+def preload() -> None:
+    """Load every bundled font now, so a missing file fails at startup, not mid-frame."""
+    for name in (TINY, SMALL, MEDIUM, BOLD, CLOCK):
+        load_font(name)

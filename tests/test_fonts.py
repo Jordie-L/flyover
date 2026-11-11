@@ -74,3 +74,12 @@ def test_missing_font_has_a_helpful_error(monkeypatch, tmp_path):
     monkeypatch.setenv("FLYOVER_FONT_DIR", str(tmp_path))
     with pytest.raises(FileNotFoundError, match="FLYOVER_FONT_DIR"):
         fonts.load_font("nonexistent")
+
+
+def test_preload_loads_every_font_and_fails_fast_when_one_is_missing(monkeypatch, tmp_path):
+    fonts.preload()  # the bundled set is complete
+    fonts.load_font.cache_clear()
+    monkeypatch.setenv("FLYOVER_FONT_DIR", str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        fonts.preload()
+    fonts.load_font.cache_clear()

@@ -106,6 +106,8 @@ class ControlApp:
         """Start joining a network. Returns an error message, or None if the attempt began."""
         if not 1 <= len(ssid.encode()) <= 32:
             return "Choose a network."
+        if ssid.startswith("-"):  # nmcli takes the name positionally and would read this as an option
+            return "Network names starting with a dash are not supported."
         if password and not 8 <= len(password) <= 64:
             return "Wi-Fi passwords are 8 to 63 characters."
         if not self._start_job(self.netwatch.request_connect, ssid, password, hidden):
@@ -128,6 +130,7 @@ class ControlServer(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
     server: ControlServer
     server_version = "flyover"
+    timeout = 15  # seconds a client may take to send its request; stops idle sockets pinning a thread
 
     def log_message(self, fmt: str, *args: Any) -> None:  # route access logs to logging, quietly
         log.debug("%s %s", self.address_string(), fmt % args)

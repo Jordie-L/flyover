@@ -10,7 +10,7 @@ import pytest
 
 from flyover.config import ConfigStore, parse_config
 from flyover.control.netwatch import NetWatch, State
-from flyover.control.nm import FakeBackend, NetworkError, WifiNetwork
+from flyover.control.nm import FakeBackend, WifiNetwork
 from flyover.control.web import MAX_FORM_BYTES, ControlApp, ControlServer
 from flyover.state import RunPaths, write_json_atomic
 
@@ -248,6 +248,7 @@ def test_a_typed_network_name_overrides_the_dropdown(stack):
     ({"ssid": "", "password": ""}, "Choose a network"),
     ({"ssid": "x" * 40, "password": ""}, "Choose a network"),
     ({"ssid": "HomeNet", "password": "short"}, "8 to 63"),
+    ({"ssid": "--help", "password": ""}, "starting with a dash"),
 ])
 def test_bad_connect_requests_are_refused_up_front(stack, data, message):
     stack.open_hotspot()
@@ -287,3 +288,14 @@ def test_a_handler_crash_returns_500_and_the_server_keeps_working(stack, monkeyp
     assert stack.client.get("/settings")[0] == 500
     monkeypatch.undo()
     assert stack.client.get("/settings")[0] == 200
+
+
+def test_idle_connections_time_out_instead_of_holding_a_thread(stack):
+    import socket
+
+    from flyover.control.web import Handler
+
+    assert 0 < Handler.timeout <= 30
+    sock = socket.create_connection(("127.0.0.1", int(stack.client.base.rsplit(":", 1)[1])))
+    sock.close()  # a silent client that leaves must not break the server
+    assert stack.client.get("/health")[0] == 200

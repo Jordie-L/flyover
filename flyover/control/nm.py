@@ -133,7 +133,17 @@ class NmcliBackend:
         for line in out.splitlines():
             device, state, connection = (split_terse(line) + ["", "", ""])[:3]
             if device == self.iface and state == "connected" and connection != HOTSPOT_PROFILE:
-                return connection or None
+                return self._active_ssid() or connection or None
+        return None
+
+    def _active_ssid(self) -> str | None:
+        """The name of the network actually joined (a profile's name can differ, e.g. "preconfigured")."""
+        out = self._nmcli("-t", "-f", "ACTIVE,SSID", "device", "wifi", "list", "ifname", self.iface,
+                          "--rescan", "no", check=False)
+        for line in out.splitlines():
+            active, _, ssid = line.partition(":")
+            if active == "yes":
+                return split_terse(ssid)[0] or None
         return None
 
     def connect(self, ssid: str, password: str, hidden: bool = False) -> None:

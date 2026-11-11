@@ -205,6 +205,7 @@ def test_unchanged_state_is_not_republished(make):
 
 def test_run_loop_survives_an_exception_and_stops(make, caplog):
     import threading
+    import time
 
     watch, backend, _, _ = make()
     calls = []
@@ -217,9 +218,10 @@ def test_run_loop_survives_an_exception_and_stops(make, caplog):
     stop = threading.Event()
     watch._now = lambda: 100.0  # past the boot timeout so the check runs immediately
     thread = threading.Thread(target=watch.run, args=(stop,))
+    deadline = time.time() + 5
     with caplog.at_level(logging.ERROR):
         thread.start()
-        while not calls:
+        while not calls and time.time() < deadline:
             thread.join(0.01)
         stop.set()
         thread.join(5)
@@ -270,7 +272,8 @@ class FakeRun:
 
 def test_nmcli_scan_and_connected_ssid():
     run = FakeRun({
-        "wifi list": (0, "HomeNet:80:WPA2\nCafe:50:\n", ""),
+        "ACTIVE,SSID": (0, "no:Cafe\nyes:HomeNet\n", ""),
+        "SSID,SIGNAL,SECURITY": (0, "HomeNet:80:WPA2\nCafe:50:\n", ""),
         "-f DEVICE,STATE,CONNECTION": (0, "eth0:unavailable:\nwlan0:connected:HomeNet\n", ""),
     })
     backend = NmcliBackend(run=run)
@@ -346,3 +349,48 @@ def test_internet_probe_succeeds_if_any_target_answers():
     assert NmcliBackend(probe=probe).has_internet()
     assert seen == ["1.1.1.1", "9.9.9.9"]  # stops at the first success
     assert not NmcliBackend(probe=lambda *a: False).has_internet()
+
+
+def test_the_joined_network_is_reported_by_ssid_not_profile_name():
+    run = FakeRun({
+        "-f DEVICE,STATE,CONNECTION": (0, "wlan0:connected:preconfigured\n", ""),
+        "ACTIVE,SSID": (0, "no:Other\nyes:Home\\:Net\n", ""),
+    })
+    assert NmcliBackend(run=run).connected_ssid() == "Home:Net"
+    # if the SSID cannot be determined, fall back to the profile name
+    fallback = FakeRun({"-f DEVICE,STATE,CONNECTION": (0, "wlan0:connected:preconfigured\n", "")})
+    assert NmcliBackend(run=fallback).connected_ssid() == "preconfigured"
+
+
+def test_run_loop_reports_a_repeating_failure_once(make, caplog):
+    import threading
+    import time
+
+    watch, backend, _, _ = make()
+    calls = []
+
+    def boom():
+        calls.append(1)
+        raise RuntimeError("nmcli exploded")
+
+    backend.connected_ssid = boom
+    ticks = [100.0]
+
+    def advancing_clock():  # each tick lands past the previous check interval, so the check runs again
+        ticks[0] += 10
+        return ticks[0]
+
+    watch._now = advancing_clock
+    stop = threading.Event()
+    real_wait = stop.wait
+    stop.wait = lambda timeout=None: real_wait(0.001)  # tick far faster than once a second
+    thread = threading.Thread(target=watch.run, args=(stop,))
+    deadline = time.time() + 5
+    with caplog.at_level(logging.ERROR):
+        thread.start()
+        while len(calls) < 20 and time.time() < deadline:
+            time.sleep(0.005)
+        stop.set()
+        thread.join(5)
+    assert len(calls) >= 20
+    assert caplog.text.count("network watcher error") == 1
