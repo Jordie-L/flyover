@@ -4,7 +4,7 @@ For whoever brings this up on the real Raspberry Pi (a Pi Zero 2 W, Raspberry Pi
 
 ## What you are inheriting
 
-All the software exists and has automated tests (`pytest`, 307 tests, about 5 seconds, run in CI). It was written in a cloud sandbox that had **no Pi, no panel, no access to the live data services, and no NetworkManager**. Everything that touches those was written from documentation and checked only against stand-ins. This document is the list of what that means.
+All the software exists and has automated tests (`pytest`, 310 tests, about 5 seconds, run in CI). It was written in a cloud sandbox that had **no Pi, no panel, no access to the live data services, and no NetworkManager**. Everything that touches those was written from documentation and checked only against stand-ins. This document is the list of what that means.
 
 Read [`README.md`](../README.md) first for the design. This file covers only what needs verifying and how.
 
