@@ -2,9 +2,11 @@
 
 A small LED display that shows the aircraft passing overhead: flight number, origin → destination, aircraft type, altitude and speed. When nothing is overhead it shows the time, date and temperature.
 
-It runs on a Raspberry Pi Zero 2 W driving a 64x64 RGB LED matrix. It sets up its own Wi-Fi: when it has no connection it opens a hotspot with a setup page, so it can be handed to someone without knowing their network details in advance.
+It runs on a Raspberry Pi Zero 2 W driving a 64x64 RGB LED matrix. It sets up its own Wi-Fi: with no connection it opens a hotspot and a phone-friendly setup page, so it can be handed to someone without knowing their network details in advance.
 
-> **This README is the build spec.** The code is being written against it, phase by phase. The [status table](#status) says what exists in the repo today. Hardware values that can only be confirmed with the panel attached are marked **verify on panel**.
+![All screens](docs/screens/gallery.png)
+
+> The pictures above are rendered by the code itself (`python -m flyover.display.gallery`), pixel for pixel what the panel is asked to show. They are not photos of hardware.
 
 ## Contents
 
@@ -21,25 +23,27 @@ It runs on a Raspberry Pi Zero 2 W driving a 64x64 RGB LED matrix. It sets up it
 11. [Operations](#operations)
 12. [Troubleshooting](#troubleshooting)
 13. [Adapting to other hardware](#adapting-to-other-hardware)
-14. [Roadmap](#roadmap)
+14. [Not built yet](#not-built-yet)
 15. [Credits and licence](#credits-and-licence)
 
 ---
 
 ## Status
 
-| Area | State |
-|---|---|
-| Design and spec (this README) | Done |
-| Config loading, `preview` and `png` display backends, fonts | Planned (phase 1) |
-| Idle screen: clock, date, weather | Planned (phase 1) |
-| Flight data, overhead selection, flight screen | Planned (phase 2) |
-| Web UI: live preview, settings, Wi-Fi page | Planned (phase 3) |
-| `install.sh`, systemd services, hotspot and captive portal on a real Pi | Planned (phase 4) |
-| LED matrix backend and panel tuning | Planned (phase 5, needs the panel) |
-| Remote access, watchdog, extras | Planned (phase 6) |
+All of the software is written and covered by automated tests (`pytest`, run in CI). It has been built without access to a Pi, a panel, or the live data services, so each part is marked by how far it has been checked.
 
-Nothing below is runnable until its phase lands. Commands and file paths describe the target layout.
+| Area | Automated tests | Checked on real hardware or live services |
+|---|---|---|
+| Config, state files, clock and time zone | Yes | n/a |
+| Screens (idle, flight, Wi-Fi setup, boot) | Yes, pixel snapshots | Not yet: needs the panel |
+| Weather, flight positions, route lookup | Yes, against sample replies built from the documented formats | **Not yet**: live replies may differ in small ways |
+| Overhead selection, hold time, route check | Yes | Not yet: tune the radius on site |
+| Network state machine, hotspot and portal logic | Yes, against a simulated NetworkManager | **Not yet**: needs a Pi and a phone |
+| Web UI (status, settings, Wi-Fi) | Yes, against a real HTTP server | Not yet on a phone |
+| `install.sh`, systemd units | File edits tested; the script itself has not run | **Not yet**: needs Raspberry Pi OS |
+| LED matrix backend | Yes, against a stand-in for the driver | **Not yet**: needs the panel; tuning values are starting points |
+
+`docs/PI_INTEGRATION.md` lists exactly what to verify on the device, in what order, and where to fix each likely failure.
 
 ---
 
@@ -55,8 +59,6 @@ Nothing below is runnable until its phase lands. Commands and file paths describ
 | 5 V DC power supply, 4 A or more, 2.1 mm barrel plug | Plugs into the bonnet. |
 | microSD card, 8 GB or more | |
 | Smoked (tinted) acrylic sheet, 160 × 160 mm, about 3 mm thick | Optional but recommended: it raises contrast and hides the glow around lit pixels. |
-| BH1750 light sensor | Optional. Automatic brightness. |
-| DS3231 clock module | Optional. Keeps the time through a power cut with no internet. |
 
 ### Power
 
@@ -76,7 +78,6 @@ Two solder jobs on the bonnet. The first is required for this panel.
 2. **PWM jumper (optional, reduces flicker).**
    - Solder a short wire between the pads for GPIO4 and GPIO18.
    - Then set `hardware_mapping = "adafruit-hat-pwm"` in the config. Without the wire, use `"adafruit-hat"`.
-   - This uses the Pi's hardware timer, which is shared with onboard audio. Audio is disabled by the installer in either case.
 
 ### Assembly
 
@@ -107,12 +108,12 @@ The screens also use bitmap fonts with no smoothing and avoid pure white, which 
 Use Raspberry Pi Imager.
 
 1. Device: **Raspberry Pi Zero 2 W**.
-2. Operating system: **Raspberry Pi OS Lite (64-bit)**. The Lite image has no desktop, which is what you want.
+2. Operating system: **Raspberry Pi OS Lite (64-bit)**. It has no desktop and uses NetworkManager for Wi-Fi, which Flyover requires.
 3. In the customisation settings:
    - **Hostname:** `flyover`. The device is then reachable as `flyover.local`.
    - **Username and password:** your choice.
    - **Wi-Fi:** a network you can reach for first setup, such as your own or a phone hotspot. Set the **Wi-Fi country** correctly: the setup hotspot will not start without it.
-   - **Locale:** your keyboard layout. The time zone is set automatically later from the configured location.
+   - **Locale:** your keyboard layout.
    - **SSH:** enabled, with your public key.
 4. Write the card, insert it, and power the Pi.
 
@@ -138,72 +139,71 @@ sudo apt-get update && sudo apt-get install -y git
 ```
 
 ```bash
-sudo git clone https://github.com/jordie-l/flyover.git /opt/flyover
+sudo git clone https://github.com/Jordie-L/flyover.git /opt/flyover
 ```
 
 ```bash
-sudo mkdir -p /etc/flyover && sudo cp /opt/flyover/config.example.toml /etc/flyover/config.toml
+cd /opt/flyover && sudo deploy/install.sh
 ```
 
-Edit the config (see [What to change for your install](#what-to-change-for-your-install)):
+With no panel attached yet, add `--no-matrix` (the display then runs in preview mode, which the web UI shows):
 
 ```bash
-sudo nano /etc/flyover/config.toml
+cd /opt/flyover && sudo deploy/install.sh --no-matrix
 ```
 
-Run the installer, then reboot:
+Reboot when the script says so, then open `http://flyover.local/`. The page shows a live picture of what the panel is displaying, whether or not a panel is attached. Set the location under **Settings**.
 
-```bash
-sudo /opt/flyover/deploy/install.sh
-```
+### Installer options
 
-```bash
-sudo reboot
-```
-
-After the reboot, open `http://flyover.local/` from a device on the same network. The page shows a live picture of what the panel is displaying, whether or not a panel is attached.
+| Option | Effect |
+|---|---|
+| `--no-matrix` | Skip the LED driver and the boot settings it needs. |
+| `--volatile-logs` | Keep the system journal in RAM, to spare the SD card. |
+| `--no-watchdog` | Do not enable the hardware watchdog. |
 
 ### What the installer does
 
-The script is safe to run again after an update. Each step can also be done by hand.
+The script is safe to run again, which is also how you update. Each step can be done by hand.
 
 | Step | Action |
 |---|---|
-| 1 | Installs system packages: Python virtual-environment support, Python headers, Cython and a C++ compiler (needed to build the matrix library). |
-| 2 | Creates a Python virtual environment at `/opt/flyover/.venv` and installs Flyover into it. |
-| 3 | Builds and installs the [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) Python binding into the same environment. Skipped with `--no-matrix`. |
-| 4 | Creates `/var/lib/flyover` (route cache, owned by the `daemon` user) and a rule that creates `/run/flyover` at every boot. |
-| 5 | Turns off onboard audio: adds `dtparam=audio=off` to `/boot/firmware/config.txt` and blacklists the `snd_bcm2835` module. The matrix library refuses to start while that module is loaded. |
-| 6 | Reserves one CPU core for the panel refresh thread by appending `isolcpus=3` to the single line in `/boot/firmware/cmdline.txt`. |
-| 7 | Adds a DNS rule for the setup hotspot at `/etc/NetworkManager/dnsmasq-shared.d/flyover.conf`, so that every name resolves to the Pi while a phone is connected to the hotspot. |
-| 8 | Installs and enables the two services, `flyover-display` and `flyover-control`. |
-| 9 | With `--volatile-logs`: keeps system logs in memory to reduce SD-card wear. |
+| 1 | Installs system packages: Python virtual-environment support, git, `iw`, `dnsmasq-base`, and (unless `--no-matrix`) Cython and a C++ compiler. |
+| 2 | Creates a Python virtual environment at `.venv` in the checkout and installs Flyover into it. |
+| 3 | Builds and installs the [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) Python binding into that environment, and checks that `import rgbmatrix` works. |
+| 4 | Turns off onboard audio (`dtparam=audio=off` in `/boot/firmware/config.txt`, and a blacklist for `snd_bcm2835`): the matrix driver refuses to start while it is loaded. |
+| 5 | Reserves one CPU core for the panel refresh thread by appending `isolcpus=domain,managed_irq,3 nohz_full=3 rcu_nocbs=3 irqaffinity=0,1,2` to the single line of `/boot/firmware/cmdline.txt`. |
+| 6 | Creates `/etc/flyover`, `/var/lib/flyover` (owned by `daemon`) and a boot-time rule that creates `/run/flyover` shared between the two services. |
+| 7 | Copies `config.example.toml` to `/etc/flyover/config.toml` if there is none, and replaces the placeholder hotspot password with a random one, which it prints. |
+| 8 | Adds a DNS rule at `/etc/NetworkManager/dnsmasq-shared.d/flyover.conf` so that every name resolves to the Pi while a phone is on the setup hotspot. |
+| 9 | Enables the hardware watchdog (`RuntimeWatchdogSec=15`), and with `--volatile-logs` RAM-only logs. |
+| 10 | Installs, enables and starts `flyover-display` and `flyover-control`, then warns if no Wi-Fi country is set. |
 
-Steps 5 and 6 need the reboot to take effect.
+Steps 4 and 5 need a reboot to take effect.
 
 ---
 
 ## What to change for your install
 
-Everything specific to one installation lives in `/etc/flyover/config.toml`. Nothing in the code needs editing.
+Everything specific to one installation lives in `/etc/flyover/config.toml`. Nothing in the code needs editing. Most of it can be changed on the web UI's **Settings** page, which edits the file in place and keeps its comments.
 
 | Setting | Key | Change it? |
 |---|---|---|
-| Where the display is | `[location] latitude`, `longitude` | **Always.** Can also be set by clicking a map on the settings page. |
-| Hotspot name and password | `[hotspot] ssid`, `password` | **Always** change the password (8–63 characters). |
+| Where the display is | `[location] latitude`, `longitude` | **Always.** Settings page: paste "lat, lon" copied from a maps app. |
+| Hotspot name and password | `[hotspot] ssid`, `password` | The installer generates the password. Change the name if you like. |
 | How far out to look | `[flights] radius_km`, `max_altitude_ft` | Tune after watching a few passes. |
 | Units and clock style | `[display] temperature_unit`, `distance_unit`, `clock_24h` | To taste. |
 | Brightness and night hours | `[display] brightness`, `night_*`, `quiet_*` | To taste. |
 | Matrix wiring | `[matrix] hardware_mapping` | Only if you fitted the PWM jumper. |
 | Matrix timing | `[matrix] gpio_slowdown` and the other timing keys | Only if the picture flickers or ghosts. |
 
-The home Wi-Fi name and password are **not** in this file. They are entered on the setup page and stored by the operating system's network manager.
+The home Wi-Fi name and password are **not** in this file. They are entered on the setup page and stored by NetworkManager.
 
 ---
 
 ## Configuration reference
 
-The full file with defaults. Most of these can also be changed on the settings page, which rewrites this file.
+The full file with defaults.
 
 ```toml
 [location]
@@ -267,109 +267,99 @@ The `[matrix]` defaults are starting values. **Verify on panel.**
 
 ### Screens
 
-The panel is 64 × 64 pixels. Mock-ups below are indicative, not pixel-exact.
+The panel is 64 × 64 pixels. Every screen below is rendered by the code (6× enlarged, with a grid so single pixels show).
 
-**Flight** (a plane is overhead)
+**Idle** (nothing overhead): large clock, date, and the weather with an icon. The weather is hidden once it is over an hour old.
 
-```
-┌────────────────┐
-│▌UA1234         │  flight number, with a bar in the airline's colour
-│                │
-│  SFO>ORD       │  origin and destination, large
-│                │
-│ B738   8.5k ↓  │  aircraft type, altitude in thousands of feet, climbing or descending
-│ 142kt  0.8mi ↗ │  ground speed, distance from you, direction of travel
-│             +2 │  number of other aircraft also in range
-└────────────────┘
-```
+| Day | Night (amber, dimmer) | Time not synced yet | Offline (red Wi-Fi mark) |
+|---|---|---|---|
+| ![](docs/screens/idle_day.png) | ![](docs/screens/idle_night.png) | ![](docs/screens/idle_no_time.png) | ![](docs/screens/idle_offline.png) |
 
-**Idle** (nothing overhead)
+**Flight** (an aircraft is overhead)
 
-```
-┌────────────────┐
-│                │
-│     7:42       │  large clock
-│                │
-│   SAT NOV 9    │
-│   ☀  54°F      │  weather icon and temperature
-│                │
-└────────────────┘
-```
+| Descending | Climbing, 2 more in range | Aircraft details | No route known |
+|---|---|---|---|
+| ![](docs/screens/flight_descending.png) | ![](docs/screens/flight_climbing_others.png) | ![](docs/screens/flight_aircraft_page.png) | ![](docs/screens/flight_no_route.png) |
 
-**Wi-Fi setup** (hotspot is open)
+Rows, top to bottom:
 
-```
-┌────────────────┐
-│  WIFI SETUP    │
-│   ▄▄▄▄▄▄▄▄     │
-│   █ QR   █     │  scan with a phone camera to join the hotspot
-│   ▀▀▀▀▀▀▀▀     │
-│ Flyover-Setup  │
-│ <password>     │
-└────────────────┘
-```
+1. Flight number, with a bar in the airline's colour. `+N` at the right when other aircraft are also in range.
+2. Origin → destination (IATA codes; ICAO when there is no IATA code). Dimmed with a red `?` when the position does not fit the stored route.
+3. Aircraft type, altitude (`850`, `2.4k`, `35k` feet), and a mark: green triangle up when climbing, amber triangle down when descending, dash when level.
+4. Ground speed in knots, distance from the display, and an arrow for the direction of travel.
+5. Airline name, alternating every 4 seconds with the aircraft model (`Boeing 737-824`).
+
+With no route found (private and military aircraft), the big line shows the registration or type instead.
+
+**Wi-Fi setup** (hotspot is open): a QR code that joins the hotspot, the hotspot name and its password. After a failed attempt the title is replaced by `BAD PASSWORD` or `TRY AGAIN`.
+
+| Setup | After a wrong password | Connecting |
+|---|---|---|
+| ![](docs/screens/wifi_setup.png) | ![](docs/screens/wifi_setup_wrong_password.png) | ![](docs/screens/wifi_connecting.png) |
 
 **Other states**
 
 | State | What is shown |
 |---|---|
-| Connected to Wi-Fi but no internet | The idle screen with a small red Wi-Fi mark in the corner. |
+| Connected to Wi-Fi but no internet | The normal screens with a small red Wi-Fi mark in the corner. |
 | Time not yet known | `--:--` in place of the clock. |
-| Night hours | Reduced brightness, amber only. |
+| Night hours | Reduced brightness, amber only (the QR code stays black on white so phones can read it). |
 | Quiet hours | Panel off. Flight requests are paused. |
 
 ### Which plane is shown
 
-1. Ask the flight data service for aircraft in a circle around the configured location.
-2. Discard aircraft on the ground and aircraft above `max_altitude_ft`.
-3. Between requests, move each aircraft forward along its heading at its reported speed. A jet covers about a kilometre between requests, so this keeps the timing and the distance readout accurate.
+1. Ask the flight data service for aircraft in a circle around the configured location, a little larger than the radius so approaching aircraft are already known.
+2. Discard aircraft on the ground, with no altitude, or above `max_altitude_ft`.
+3. Between requests, move each aircraft forward along its heading at its reported speed (for up to 60 seconds). A jet covers about a kilometre between requests, so this keeps the timing and the distance readout accurate.
 4. An aircraft is "overhead" while it is inside `radius_km`.
-5. If several are overhead, show the closest and a `+N` count.
-6. Keep showing an aircraft for `hold_seconds` after it leaves, so the screen does not flick back and forth at the edge of the circle.
+5. If several are overhead, show the closest and a `+N` count. The aircraft already shown is only replaced by one that is clearly closer (under 70% of its distance), so two aircraft at similar distances do not flip back and forth.
+6. Keep showing an aircraft for `hold_seconds` after it leaves, unless another has arrived.
 
 What is shown for each aircraft:
 
 - **Flight number.** The form printed on a ticket (`UA1234`) when the lookup returns it. Otherwise the radio callsign (`UAL1234`).
-- **Route.** Airport codes for origin and destination.
-- **Route check.** Route databases key on the flight number, and airlines reuse numbers. If the aircraft's position is far from the line between the two airports, the route is shown dimmed with a `?`.
-- **No route found** (private, military, some cargo): the registration and aircraft type instead.
+- **Route check.** Route databases key on the flight number, and airlines reuse numbers. If the aircraft is further from the line between the two airports than 150 km (or a fifth of the route length, if larger), the route is dimmed and marked `?`.
+- **No route found:** the registration and aircraft type instead.
 
 ### Network states
 
 ```
 BOOT      Try saved networks for boot_timeout_s.
-          Connected -> ONLINE.  Not connected -> scan, then HOTSPOT.
+          Connected -> ONLINE.  Connected but no internet -> DEGRADED.  Nothing -> scan, then HOTSPOT.
 
 ONLINE    Test the connection every check_interval_s.
           failures_before_degraded misses in a row -> DEGRADED.
 
-DEGRADED  Leave the network manager to reconnect for degraded_timeout_s.
-          Reconnected -> ONLINE.  Still down -> scan, then HOTSPOT.
+DEGRADED  Test every 10 s while NetworkManager tries to reconnect.
+          Reconnected -> ONLINE.  Still down after degraded_timeout_s -> scan, then HOTSPOT.
 
 HOTSPOT   Open the setup hotspot and serve the setup page.
-          Credentials submitted -> try to join.
-              Joined -> ONLINE.  Failed -> HOTSPOT again, with the reason shown on the page.
+          Credentials submitted -> CONNECTING.
           Every retry_minutes, if no device is connected to the hotspot:
-              close it briefly, rescan, and retry saved networks.
+              close it briefly and retry saved networks.  Joined -> ONLINE.  Otherwise rescan and reopen.
+
+CONNECTING  Close the hotspot and join the chosen network (about 10 to 60 seconds).
+          Joined -> ONLINE.  Failed -> back to HOTSPOT (or the previous network) with the reason shown.
 ```
 
-- The last rule covers a router that was simply rebooting: the display rejoins without anyone touching it.
+- "Internet works" means a TCP connection to one of three well-known public addresses (1.1.1.1, 9.9.9.9, 8.8.8.8, port 443) succeeds. DNS is deliberately not part of the test, and nothing about this device is sent.
+- The retry rule covers a router that was simply rebooting: the display rejoins without anyone touching it.
 - The hotspot is never closed while a device is connected to it, so setup is not interrupted.
 
 ### Setting up Wi-Fi
 
-1. The panel shows the Wi-Fi setup screen. With no panel attached, the hotspot name and password are the ones in `config.toml`.
+1. The panel shows the Wi-Fi setup screen. With no panel attached, the hotspot name and password are the ones in `config.toml` (the installer prints the password).
 2. On a phone, scan the QR code, or join the hotspot by name and password.
 3. The phone opens the setup page by itself (the "sign in to network" prompt). If it does not, browse to `http://10.42.0.1/`.
-4. Pick the home network from the dropdown, enter its password, and submit.
-5. The hotspot closes while the Pi tries to join. On success the panel returns to the idle screen. On failure the hotspot reopens and the page shows why.
+4. Pick the home network from the dropdown, enter its password, and submit. For a hidden network, type its name and tick "Hidden network".
+5. The hotspot closes while the Pi tries to join, so the phone drops off. On success the panel returns to the idle screen. On failure the hotspot reopens (rejoin it; most phones do so by themselves) and the page shows why.
 
 Details:
 
-- The Pi has one radio and cannot scan while it is acting as a hotspot. Networks are scanned just before the hotspot opens. The **Rescan** button closes the hotspot for about 10 seconds to scan again; the phone has to rejoin afterwards.
+- The Pi has one radio and cannot scan while it is acting as a hotspot. Networks are scanned just before the hotspot opens. **Scan again** closes the hotspot for about 15 seconds.
 - The hotspot is password-protected (WPA2), so the home Wi-Fi password is not sent over an open network.
-- A hidden network can be typed in by name.
 - Only 2.4 GHz networks appear in the list.
+- The same page, under the **Wi-Fi** link, changes networks later from the home network.
 
 ---
 
@@ -378,35 +368,33 @@ Details:
 ### Two services
 
 ```
-flyover-display     starts as root to claim the panel, then runs as the `daemon` user
-    fetches flights, routes and weather
-    picks the overhead aircraft
-    draws the current screen and sends it to the panel
-    reads   /etc/flyover/config.toml
+flyover-display     starts as root to claim the panel, then drops to the `daemon` user
+    fetches flights, routes and weather in background threads
+    picks the overhead aircraft, draws the current screen, sends it to the panel
+    reads   /etc/flyover/config.toml  (re-read when it changes)
             /run/flyover/net.json
-    writes  /run/flyover/frame.png      the current screen, for the web preview
-            /run/flyover/status.json    what it is showing and whether its data sources are healthy
-            /var/lib/flyover/           route cache and the last known time zone
+    writes  /run/flyover/frame.png     the current screen, for the web preview
+            /run/flyover/status.json   what it is showing, and whether its data sources are healthy
+            /var/lib/flyover/          route cache (SQLite) and the last known time zone
 
 flyover-control     runs as root
-    web UI on port 80
-        /            live preview and status
-        /settings    location, radius, brightness, units
-        /wifi        network dropdown and password
-    network state machine
+    web UI on port 80:  /  /settings  /wifi  /frame.png  /api/status  /api/net
+    network state machine (the only code that runs nmcli)
     reads   /run/flyover/frame.png, /run/flyover/status.json
-    writes  /etc/flyover/config.toml    replaced atomically
-            /run/flyover/net.json       current network state and hotspot details
+    writes  /etc/flyover/config.toml    in place, atomically, keeping comments
+            /run/flyover/net.json       network state and hotspot details
 ```
 
 Why two and not one:
 
-- The matrix library gives up root as soon as the panel is initialised. Joining networks and opening a hotspot need root. They cannot share a process.
+- The matrix driver needs root only to claim the hardware; the display then drops to an unprivileged user, because it parses data from the internet. Joining networks, opening a hotspot and binding port 80 need root, so they live in the other service.
 - A crash in the web UI must not blank the panel, and the reverse.
 
-Why not three: the Wi-Fi page and the network state machine both issue network commands. Keeping them in one process means only one thing is ever changing the network.
+Why not three: the Wi-Fi page and the network state machine both change the network. In one process they share a lock, so only one thing is ever changing it.
 
-The services exchange plain files and nothing else. The display notices a config change by watching the file's modification time.
+The services exchange plain files and nothing else. Both read the config through the same `ConfigStore`, which keeps the last good configuration if a hand edit leaves the file invalid.
+
+Why the web UI uses the standard library rather than a framework: the pages are small and used by one person at a time, and a framework costs memory and install time on a 512 MB board.
 
 ### Display backends
 
@@ -414,42 +402,45 @@ Every screen is drawn as a 64 × 64 image in memory. A backend then delivers it.
 
 | Backend | Delivers to | Used for |
 |---|---|---|
-| `matrix` | The LED panel | The finished device |
+| `matrix` | The LED panel (and the preview file) | The finished device |
 | `preview` | `/run/flyover/frame.png`, shown on the web UI | A Pi with no panel, a laptop, and remote checks |
-| `png` | Files on disk | Automated tests |
+| `png` | Memory, optionally files | Automated tests |
 
-The `matrix` backend also writes the preview file, so the web UI always shows the real panel contents.
+`auto` uses the matrix when the driver's Python module imports, otherwise the preview. Asking for `matrix` without the driver is an error rather than a silent fallback.
 
 ### Source layout
 
 ```
 flyover/
-  config.py            load and validate config.toml
-  state.py             read and write the files in /run/flyover
+  config.py            typed config, validation, ConfigStore (reloads on change)
+  state.py             the files in /run/flyover: atomic writes, tolerant reads
+  clock.py             is the time trustworthy, which time zone
   geo.py               distance, bearing, dead reckoning, distance from a route line
+  models.py            Aircraft, Airport, RouteInfo, FlightView
   selector.py          choose the overhead aircraft
   providers/
-    flights.py         aircraft positions
-    routes.py          flight number, route, aircraft type
-    weather.py         temperature, conditions, time zone
-    cache.py           SQLite cache
+    http.py            JSON GET on the standard library
+    poller.py          background fetch with backoff; the pace may adapt
+    weather.py         Open-Meteo
+    flights.py         aircraft positions (airplanes.live / adsb.lol)
+    routes.py          flight number, route, aircraft (adsbdb), SQLite cache
   display/
-    app.py             main loop
-    fonts.py           bitmap font loading
-    scenes/            idle, flight, wifi_setup, boot
+    app.py             main loop and scene choice
+    scenes/            idle, flight, wifi_setup, boot (each a pure function of a Context)
     backends/          matrix, preview, png
+    fonts.py icons.py draw.py theme.py   BDF renderer, weather icons, arrows, day/night palettes
+    privileges.py      drop root after the hardware is claimed
+    samples.py gallery.py                every screen in a fixed state, for docs and tests
   control/
-    app.py             starts the web server and the network state machine
+    app.py             starts the web server and the network watcher
+    web.py pages.py    HTTP handlers and HTML
     netwatch.py        the state machine
-    nm.py              the only module that runs network commands
-    web/               pages and templates
+    nm.py              the nmcli wrapper, plus a fake for tests and --fake-network
+    config_edit.py     comment-preserving edits to config.toml
 fonts/                 bitmap fonts (X11 "misc-fixed", public domain)
-deploy/
-  install.sh
-  systemd/             flyover-display.service, flyover-control.service
-  nm/                  hotspot DNS rule
-tests/
-  fixtures/            sample API responses
+deploy/                install.sh, systemd units, tmpfiles rule, NetworkManager DNS rule
+docs/                  rendered screens, PI_INTEGRATION.md
+tests/                 unit, snapshot and end-to-end tests; fixtures/ holds sample API replies
 config.example.toml
 pyproject.toml
 ```
@@ -458,9 +449,9 @@ pyproject.toml
 
 | To add | Do this |
 |---|---|
-| A screen | Add a module in `display/scenes/` that draws onto the image it is given, and register when it should be active in `display/app.py`. |
-| A flight data source | Add a class in `providers/flights.py` that returns the common aircraft record, and name it in `[flights] provider`. |
-| A display type | Add a module in `display/backends/` that accepts a 64 × 64 image. |
+| A screen | Add a module in `display/scenes/` with a `name` and a `render(ctx)` that returns a 64 × 64 image, add a sample to `display/samples.py`, and choose it in `DisplayApp._choose_scene`. |
+| A flight data source | Add its URL to `providers/flights.py` if it speaks the same format, or a parser if not, and name it in `[flights] provider` (and in `config._validate`). |
+| A display type | Add a module in `display/backends/` that implements `show(image, brightness)` and `close()`, and select it in `backends/__init__.py`. |
 
 ### Network commands used
 
@@ -468,20 +459,25 @@ pyproject.toml
 
 | Purpose | Command |
 |---|---|
-| List networks | `nmcli -t -f SSID,SIGNAL,SECURITY device wifi list --rescan yes` |
-| Join a network | `nmcli device wifi connect "<ssid>" password "<password>" ifname wlan0` |
-| Open the hotspot | `nmcli device wifi hotspot ifname wlan0 ssid "<ssid>" password "<password>"` |
-| Close the hotspot | `nmcli connection down Hotspot` |
-| Connection state | `nmcli -t -f STATE,CONNECTIVITY general` |
-| Saved networks | `nmcli -t -f NAME,TYPE connection show` |
+| List networks | `nmcli -t -f SSID,SIGNAL,SECURITY device wifi list ifname wlan0 --rescan yes` |
+| Name of the joined network | `nmcli -t -f ACTIVE,SSID device wifi list ifname wlan0 --rescan no` |
+| Join a network | `nmcli device wifi connect "<ssid>" ifname wlan0 password "<password>"` |
+| Rejoin a saved network | `nmcli device connect wlan0` |
+| Open the hotspot | `nmcli device wifi hotspot ifname wlan0 con-name Flyover-Hotspot ssid "<ssid>" password "<password>" band bg` |
+| Keep NetworkManager from opening it on its own | `nmcli connection modify Flyover-Hotspot connection.autoconnect no` |
+| Close the hotspot | `nmcli connection down id Flyover-Hotspot` |
+| Devices on the hotspot | `iw dev wlan0 station dump` |
 
-The hotspot uses the network manager's "shared" mode: the Pi takes the address `10.42.0.1` and hands out addresses to devices that join. The DNS rule from the installer makes every hostname resolve to the Pi, and the web UI redirects any unknown request to `/wifi`. Together these trigger the phone's sign-in prompt.
+The hotspot uses NetworkManager's "shared" mode: the Pi takes the address `10.42.0.1` and hands out addresses to devices that join. The installed DNS rule makes every hostname resolve to the Pi, and the web UI redirects every request except the setup page to `/wifi` while the hotspot is up. Together these trigger the phone's sign-in prompt.
 
 ### Security
 
 - The web UI has no login. Anyone on the same network can change the settings. This suits a home network; do not expose port 80 to the internet.
-- Home Wi-Fi credentials are stored by the network manager in files only root can read. They are never written to `config.toml`, the logs or the web pages.
-- Keep your edited `config.toml` out of version control: it holds your location and hotspot password.
+- Home Wi-Fi credentials are stored by NetworkManager in files only root can read. They are never written to `config.toml`, the logs or the web pages.
+- While `nmcli` joins a network, the password is visible in the process list to other local users for a few seconds. The Pi has no other users.
+- The hotspot password is in `config.toml` and `net.json`, which are world-readable: the display needs it to draw the QR code.
+- Pages escape every dynamic value, send a restrictive Content-Security-Policy, and refuse form bodies over 8 KB.
+- Keep your edited `config.toml` out of version control: it holds your location and hotspot password. (The repository's `.gitignore` excludes a `config.toml` in the repository root.)
 
 ---
 
@@ -493,24 +489,24 @@ All three are free and need no account.
 |---|---|---|
 | Aircraft positions | [airplanes.live](https://airplanes.live) | `GET https://api.airplanes.live/v2/point/{lat}/{lon}/{radius_nm}` |
 | Positions, alternative | [adsb.lol](https://adsb.lol) | `GET https://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}` |
-| Route, flight number, aircraft | [adsbdb](https://www.adsbdb.com) | `GET https://api.adsbdb.com/v0/aircraft/{hex}?callsign={callsign}` |
+| Route, flight number, aircraft | [adsbdb](https://www.adsbdb.com) | `GET https://api.adsbdb.com/v0/aircraft/{hex}?callsign={callsign}`, then `GET .../v0/callsign/{callsign}` if the aircraft is unknown |
 | Weather and time zone | [Open-Meteo](https://open-meteo.com) | `GET https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day&timezone=auto` |
 
 Notes:
 
-- **Positions.** Both position services return the same format. Radius is in nautical miles. Fields used: `hex` (the aircraft's unique radio address), `flight` (callsign), `r` (registration), `t` (type), `lat`, `lon`, `alt_baro`, `gs` (ground speed), `track`, `baro_rate`. The airplanes.live endpoint and its limit of one request per second are to be confirmed on the first live run.
+- **Positions.** Both position services return the same format. Radius is in nautical miles. Fields used: `hex` (the aircraft's unique radio address), `flight` (callsign), `r` (registration), `t` (type), `lat`, `lon`, `alt_baro` (a number, or `"ground"`), `gs` (ground speed), `track`, `baro_rate`, `seen_pos`. The airplanes.live endpoint and its rate limit were written from memory and are to be confirmed on the first live run.
 - **adsb.lol** has announced that it will require an API key in future, issued to people who contribute receiver data. It is offered as an alternative, not as an automatic fallback.
-- **Routes.** One request per newly seen aircraft returns the aircraft details and the route together. An unknown callsign returns HTTP 404, or just the aircraft details in the combined form. Results are cached for `route_cache_days`; "not found" is cached for a shorter time.
+- **Routes.** One request per newly seen aircraft returns the aircraft details and the route together. Results are cached for `route_cache_days`, in memory and in SQLite, so a restart does not ask again; "not found" is cached for 6 hours. A failed request is retried after a minute. Lookups run one at a time in the background, at most one a second.
 - **Weather.** Refreshed every 15 minutes. The response also names the time zone for the coordinates, which Flyover uses for the clock and stores for the next offline start.
+- **Privacy.** Requests carry only the coordinates they need, and a generic `User-Agent` (`pi-display-client/0.1`). Error messages and logs name the host, never the URL.
 
 ### Request volume
 
 These are community services, so Flyover keeps its footprint small.
 
-- One position request every 10 seconds when idle, every 5 seconds while an aircraft is near. About 9,000 requests a day at most.
-- No requests during quiet hours.
-- After an error or a "slow down" response, the interval doubles on each failure up to 5 minutes, then recovers.
-- A descriptive `User-Agent` header identifies the project.
+- One position request every 10 seconds when idle, every 5 seconds while an aircraft is within reach. About 9,000 requests a day at most.
+- No position requests during quiet hours.
+- After an error, the wait doubles on each failure up to 5 minutes, then returns to normal after one success.
 
 ### When a source is down
 
@@ -518,13 +514,13 @@ These are community services, so Flyover keeps its footprint small.
 |---|---|
 | Positions | Idle screen stays up. No flights are shown. |
 | Routes | Flights are shown with callsign, type, altitude and speed, without origin and destination. |
-| Weather | The temperature line is hidden after the last reading is an hour old. |
+| Weather | The temperature is hidden once the last reading is an hour old. |
 
 ---
 
 ## Development
 
-Flyover runs on any computer with Python; no Pi or panel is needed for most work.
+Flyover runs on any computer with Python 3.11 or newer; no Pi or panel is needed for most work.
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
@@ -534,19 +530,25 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Run the display with the preview backend:
+Run the display with the preview backend (it writes `run/frame.png`):
 
 ```bash
-python -m flyover.display --config config.example.toml --backend preview --run-dir ./run
+python -m flyover.display --config config.example.toml --backend preview --run-dir ./run --data-dir ./data
 ```
 
-Run the web UI against a simulated network manager:
+Run the control service against a simulated network manager, then open `http://localhost:8080/`:
 
 ```bash
 python -m flyover.control --config config.example.toml --run-dir ./run --fake-network --port 8080
 ```
 
-Then open `http://localhost:8080/`.
+Both write into `./run`, so the web UI shows the live preview. Use your own copy of the config (with your coordinates) rather than editing `config.example.toml`: the settings page edits whichever file it is given.
+
+Render every screen:
+
+```bash
+python -m flyover.display.gallery --out docs/screens
+```
 
 Run the tests:
 
@@ -556,12 +558,11 @@ pytest
 
 What the tests cover:
 
-- Aircraft selection: entering and leaving the circle, several candidates, the altitude ceiling, hold time.
-- Route check: on-route and off-route positions.
-- The network state machine, driven by a fake network manager.
-- One image snapshot per screen, compared against a stored reference.
-
-`tests/fixtures/` holds sample responses in each service's format, so tests never touch the network.
+- Config validation (including a check that the config block in this README matches `config.example.toml`), and the comment-preserving config editor.
+- Fonts, icons, themes, and one pixel snapshot per screen in `tests/snapshots/`. After an intentional change to a screen, regenerate them with `UPDATE_SNAPSHOTS=1 pytest tests/test_scenes_app.py` and look at the result before committing.
+- Flight replies, dead reckoning, selection and hold time, route plausibility, and the route resolver with its SQLite cache, using sample replies in `tests/fixtures/`. No test touches the network.
+- The network state machine against a simulated NetworkManager, the `nmcli` command construction against a fake subprocess, and the web UI against a real HTTP server on a local port.
+- The display loop end to end, the LED matrix backend against a stand-in for the driver, and every file edit the installer makes.
 
 ---
 
@@ -578,10 +579,10 @@ sudo systemctl restart flyover-display flyover-control
 ```
 
 ```bash
-journalctl -u flyover-control -f
+journalctl -u flyover-display -u flyover-control -f
 ```
 
-Both services restart automatically if they exit.
+Both services restart automatically if they exit. A repeating failure is logged once, not every frame.
 
 ### Updating
 
@@ -589,17 +590,18 @@ Both services restart automatically if they exit.
 cd /opt/flyover && sudo git pull && sudo deploy/install.sh
 ```
 
-The installer leaves an existing `/etc/flyover/config.toml` untouched.
+The installer leaves an existing `/etc/flyover/config.toml` untouched. (There is deliberately no "update" button on the web page: running `git pull` as root from an unauthenticated page is not a risk worth taking.)
 
 ### Remote access
 
-Once the display is in someone else's home you are no longer on its network. A mesh VPN such as [Tailscale](https://tailscale.com) on the Pi gives you SSH and the web UI from anywhere without opening ports on their router. Install it before handing the device over.
+Once the display is in someone else's home you are no longer on its network. A mesh VPN such as [Tailscale](https://tailscale.com) on the Pi gives you SSH and the web UI from anywhere without opening ports on their router. Install it before handing the device over, following Tailscale's instructions for Raspberry Pi OS, then `sudo tailscale up --ssh`.
 
 ### Unattended reliability
 
-- **Watchdog.** The Pi's hardware watchdog reboots it if the system hangs. Enabled by setting `RuntimeWatchdogSec=15s` in `/etc/systemd/system.conf`.
+- **Watchdog.** The installer enables the Pi's hardware watchdog, so a hung system reboots.
 - **SD-card wear.** Run the installer with `--volatile-logs`. The route cache writes only when a new aircraft is first seen.
 - **Power cuts.** The device needs no clean shutdown. After power returns it rejoins Wi-Fi, syncs the time, and carries on.
+- **Daily count.** The status page shows how many different aircraft have been overhead today.
 
 ---
 
@@ -624,22 +626,24 @@ Once the display is in someone else's home you are no longer on its network. A m
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Home network missing from the dropdown | It is 5 GHz only | Enable the router's 2.4 GHz band |
-| Home network missing, router is 2.4 GHz | The scan is from before the hotspot opened | Press **Rescan**, then rejoin the hotspot |
+| Home network missing, router is 2.4 GHz | The scan is from before the hotspot opened | Press **Scan again**, then rejoin the hotspot |
 | Hotspot never appears | Wi-Fi country not set | `sudo raspi-config nonint do_wifi_country <code>`, for example `US` |
 | Phone joins the hotspot but no page opens | Phone skipped the sign-in check | Browse to `http://10.42.0.1/` |
 | "Wrong password" after submitting | Typo, or the router uses WPA3 only | Re-enter; set the router to WPA2 or mixed mode |
 | `flyover.local` does not resolve | The client does not support `.local` names | Use the IP address shown on the router's device list |
 | Clock shows `--:--` while online | Time not synced yet | Wait a minute; check `timedatectl` |
 
-### Flights
+### Flights and services
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| No flights ever shown | Location not set, or radius too small | Check `[location]`; raise `radius_km` |
+| Status page says "not running" | The display service is down | `journalctl -u flyover-display`; check `/run/flyover` is writable by `daemon` |
+| No flights ever shown | Location not set, or radius too small | Check Settings; raise `radius_km` |
 | Planes shown too early or too late | Radius does not match what you can see | Tune `radius_km` and `max_altitude_ft` |
 | High-altitude cruise traffic shown | Ceiling too high | Lower `max_altitude_ft` |
 | Route shown with `?` | Flight number reused for a different route | Expected; the position did not match the stored route |
 | Flights shown without a route | Not in the route database | Expected for private and military aircraft |
+| Settings page says the file is invalid | A hand edit broke `config.toml` | The last good configuration stays in use; fix the file (the log names the key) |
 
 ---
 
@@ -649,24 +653,23 @@ Once the display is in someone else's home you are no longer on its network. A m
 |---|---|
 | Fitted the PWM jumper | `hardware_mapping = "adafruit-hat-pwm"` |
 | A different adapter board | `hardware_mapping` to that board's name in the matrix library |
-| Raspberry Pi 3 or 4 | Works. A Pi 4 usually needs `gpio_slowdown = 4`. |
+| Raspberry Pi 3 or 4 | Should work. A Pi 4 usually needs a higher `gpio_slowdown`. The installer's core reservation (`isolcpus=...3`) assumes four cores. |
 | Raspberry Pi 5 | Not supported by this setup; its GPIO hardware differs. |
 | Original Pi Zero W | Not supported: one slow core gives a flickering panel, and current Python packages are not built for its processor. |
-| A different panel size | `rows` and `cols`. The screens are laid out for 64 × 64 and would need new layouts. |
+| A different panel size | `rows` and `cols`. The screens are laid out for 64 × 64; other sizes are padded or cropped, and would need new layouts. |
 
 ---
 
-## Roadmap
+## Not built yet
 
-| Phase | Contents |
+| Idea | Why not now |
 |---|---|
-| 0 | This README |
-| 1 | Config, preview and test backends, fonts, idle screen with weather |
-| 2 | Flight data, selection, flight screen |
-| 3 | Web UI: preview, settings, Wi-Fi page against a simulated network manager |
-| 4 | Installer, services, real hotspot and captive portal on a Pi without a panel |
-| 5 | LED matrix backend, timing, brightness, 48-hour soak test |
-| 6 | Remote access, watchdog, daily flight count, alerts for notable aircraft, update button, optional local receiver |
+| Map picker for the location | A map needs internet-hosted tiles; the page must also work offline. Pasting "lat, lon" from any maps app covers it. |
+| Login for the web UI | Suits a home network as it is; worth adding before exposing it further. |
+| Alerts for notable aircraft (A380, 747, military) | Needs a list of types and a distinct screen treatment; do it after seeing real traffic. |
+| Local ADS-B receiver (RTL-SDR) | Positions would work without internet; routes would still need it. Extra hardware. |
+| Clock module (DS3231) | Would keep the time through a power cut with no internet. Not needed while it is online. |
+| Update button on the web page | See [Operations](#updating). |
 
 ---
 
@@ -676,6 +679,7 @@ Once the display is in someone else's home you are no longer on its network. A m
 - Aircraft positions: [airplanes.live](https://airplanes.live) and [adsb.lol](https://adsb.lol), both built on data from volunteer receivers.
 - Routes and aircraft details: [adsbdb](https://www.adsbdb.com).
 - Weather: [Open-Meteo](https://open-meteo.com), licensed CC BY 4.0.
+- QR codes: [segno](https://github.com/heuer/segno). Images: [Pillow](https://python-pillow.org).
 - Fonts: X11 "misc-fixed" bitmap fonts, public domain.
 
 No licence has been chosen for this repository yet.
