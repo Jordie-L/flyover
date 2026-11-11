@@ -12,12 +12,14 @@
 #   --no-watchdog    do not enable the hardware watchdog
 #
 # Environment:
-#   RGB_MATRIX_REF   git ref of rpi-rgb-led-matrix to build (default: master)
+#   RGB_MATRIX_REF   git commit of rpi-rgb-led-matrix to build (default: the pinned one below)
 
 set -euo pipefail
 
 RGB_MATRIX_URL="https://github.com/hzeller/rpi-rgb-led-matrix"
-RGB_MATRIX_REF="${RGB_MATRIX_REF:-master}"
+# Pinned to a commit: this is built and installed as root, so a moving branch is not acceptable.
+# To update, review the upstream changes, then change the hash.
+RGB_MATRIX_REF="${RGB_MATRIX_REF:-3da7a3bdfca4637bb79ff038bc2bb26965197db5}"
 RGB_MATRIX_DIR="/opt/rpi-rgb-led-matrix"
 # One CPU core is reserved for the panel's refresh thread (the driver's own recommendation).
 CMDLINE_FLAGS="isolcpus=domain,managed_irq,3 nohz_full=3 rcu_nocbs=3 irqaffinity=0,1,2"
@@ -101,7 +103,6 @@ main() {
 
     log "Creating the Python environment in $venv"
     python3 -m venv "$venv"
-    "$venv/bin/pip" install --quiet --upgrade pip
     "$venv/bin/pip" install --quiet -e "$repo"
 
     if [[ $with_matrix -eq 1 ]]; then

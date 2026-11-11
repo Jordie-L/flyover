@@ -20,7 +20,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from ..config import Config
+from ..config import DEFAULT_HOTSPOT_PASSWORD, Config
 from .nm import HOTSPOT_IP, ConnectError, NetworkBackend, NetworkError, WifiNetwork
 
 log = logging.getLogger(__name__)
@@ -246,6 +246,8 @@ class NetWatch:
             self._scan()  # must happen first: the radio cannot scan while it is an access point
         cfg = self._cfg().hotspot
         try:
+            if cfg.password == DEFAULT_HOTSPOT_PASSWORD:
+                raise NetworkError("set a hotspot password in config.toml (the example one is public)")
             self._nm.start_hotspot(cfg.ssid, cfg.password)
         except NetworkError as exc:
             log.error("cannot start the hotspot: %s", exc)

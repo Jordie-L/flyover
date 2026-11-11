@@ -6,6 +6,7 @@ a time, so a framework would only cost memory on a 512 MB board.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import re
@@ -49,6 +50,27 @@ _SETTINGS = {
     "hotspot_ssid": ("hotspot", "ssid", str),
     "hotspot_password": ("hotspot", "password", str),
 }
+
+
+def host_is_local(host_header: str) -> bool:
+    """True if a ``Host`` header names this device the way a person on the LAN would reach it.
+
+    Accepts IP addresses, ``localhost``, ``*.local`` (mDNS) and single-label names. A public
+    name such as ``attacker.example`` that has been rebound to this device's address is
+    refused, which is what stops DNS-rebinding attacks from a web page.
+    """
+    host = host_header.strip().lower()
+    if host.startswith("["):  # [v6]:port
+        name = host[1:].split("]", 1)[0]
+    else:
+        name = host.rsplit(":", 1)[0] if ":" in host else host
+    name = name.rstrip(".")
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    return name == "localhost" or name.endswith(".local") or "." not in name
 
 
 class ControlApp:
@@ -178,11 +200,32 @@ class Handler(BaseHTTPRequestHandler):
     def _in_portal(self) -> bool:
         return self._app.netwatch.state in (State.HOTSPOT, State.CONNECTING)
 
+    def _request_allowed(self) -> bool:
+        """Refuse requests a web page on another site could be making on a visitor's behalf.
+
+        There is no login, so the defence against cross-site form posts (CSRF) and DNS
+        rebinding is to check where the request says it came from. Command-line clients
+        send no ``Origin`` and are unaffected.
+        """
+        host = self.headers.get("Host", "")
+        if host and not host_is_local(host):
+            return False
+        if self.command != "POST":
+            return True
+        origin = self.headers.get("Origin")
+        if origin is not None and (origin == "null" or urllib.parse.urlsplit(origin).netloc.lower() != host.lower()):
+            return False
+        return self.headers.get("Sec-Fetch-Site", "same-origin") in ("same-origin", "none")
+
     def _dispatch(self, routes: dict[str, Any]) -> None:
         path = urllib.parse.urlsplit(self.path).path
         try:
             if self._in_portal() and path not in PORTAL_PATHS:
                 self._redirect(f"http://{HOTSPOT_IP}/wifi")
+            elif path != "/health" and not self._request_allowed():
+                log.warning("refused %s %s (Host %r, Origin %r)", self.command, path,
+                            self.headers.get("Host"), self.headers.get("Origin"))
+                self._send(HTTPStatus.FORBIDDEN, "Forbidden", "text/plain")
             elif path in routes:
                 routes[path]()
             else:

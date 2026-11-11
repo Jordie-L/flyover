@@ -29,9 +29,9 @@ class Client:
     def __init__(self, port):
         self.base = f"http://127.0.0.1:{port}"
 
-    def request(self, path, data=None, raw=None):
+    def request(self, path, data=None, raw=None, headers=None):
         body = raw if raw is not None else (urllib.parse.urlencode(data).encode() if data is not None else None)
-        req = urllib.request.Request(self.base + path, data=body)
+        req = urllib.request.Request(self.base + path, data=body, headers=headers or {})
         try:
             with OPENER.open(req, timeout=10) as r:
                 return r.status, r.read().decode(errors="replace"), dict(r.headers)
@@ -41,8 +41,8 @@ class Client:
     def get(self, path):
         return self.request(path)
 
-    def post(self, path, data):
-        return self.request(path, data=data)
+    def post(self, path, data, headers=None):
+        return self.request(path, data=data, headers=headers)
 
 
 class Ticker:
@@ -56,7 +56,7 @@ class Ticker:
 def stack(tmp_path):
     (tmp_path / "run").mkdir()
     config = tmp_path / "config.toml"
-    config.write_text(EXAMPLE)
+    config.write_text(EXAMPLE.replace("change-me-now", "setup-pass-1"))
     store = ConfigStore(config)
     backend, clock = FakeBackend(), Ticker()
     paths = RunPaths(tmp_path / "run")
@@ -299,3 +299,46 @@ def test_idle_connections_time_out_instead_of_holding_a_thread(stack):
     sock = socket.create_connection(("127.0.0.1", int(stack.client.base.rsplit(":", 1)[1])))
     sock.close()  # a silent client that leaves must not break the server
     assert stack.client.get("/health")[0] == 200
+
+
+# -- requests from other web sites ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("headers", [
+    {"Origin": "https://attacker.example"},
+    {"Origin": "null"},
+    {"Sec-Fetch-Site": "cross-site"},
+    {"Host": "attacker.example"},
+])
+def test_cross_site_posts_are_refused_and_change_nothing(stack, headers):
+    before = stack.config.read_text()
+    status, _, _ = stack.client.post("/settings", {"brightness": "7"}, headers=headers)
+    assert status == 403 and stack.config.read_text() == before
+    status, _, _ = stack.client.post("/wifi/connect", {"ssid": "HomeNet", "password": "x"}, headers=headers)
+    assert status == 403 and "connect:HomeNet" not in stack.backend.calls
+
+
+def test_a_rebound_host_name_cannot_read_the_pages_either(stack):
+    assert stack.client.request("/settings", headers={"Host": "attacker.example"})[0] == 403
+    assert stack.client.request("/health", headers={"Host": "attacker.example"})[0] == 200
+
+
+def test_posts_from_the_devices_own_pages_are_accepted(stack):
+    host = stack.client.base.removeprefix("http://")
+    same_origin = {"Origin": stack.client.base, "Sec-Fetch-Site": "same-origin", "Host": host}
+    assert stack.client.post("/settings", {"brightness": "9"}, headers=same_origin)[0] == 303
+    mdns = {"Origin": "http://flyover.local", "Host": "flyover.local"}
+    assert stack.client.post("/settings", {"brightness": "10"}, headers=mdns)[0] == 303
+
+
+@pytest.mark.parametrize("host", ["10.42.0.1", "192.168.1.20:80", "flyover.local", "flyover", "localhost:8080",
+                                  "[::1]:80"])
+def test_host_names_for_a_device_on_the_lan_are_local(host):
+    from flyover.control.web import host_is_local
+    assert host_is_local(host)
+
+
+@pytest.mark.parametrize("host", ["attacker.example", "evil.com:80", "flyover.example.com"])
+def test_public_host_names_are_not_local(host):
+    from flyover.control.web import host_is_local
+    assert not host_is_local(host)

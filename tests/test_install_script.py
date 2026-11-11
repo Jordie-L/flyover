@@ -1,6 +1,7 @@
 """The installer itself can't run here (it needs apt, systemd and a Pi), but every file edit it
 makes lives in a function that is exercised below against temporary files."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -110,3 +111,21 @@ def test_units_start_the_modules_that_exist_and_share_the_run_directory():
     assert "CPUAffinity" not in display  # would stop the driver pinning its thread to the isolated core
     assert "d /run/flyover 0775 root daemon" in (ROOT / "deploy/tmpfiles.d/flyover.conf").read_text()
     assert "address=/#/10.42.0.1" in (ROOT / "deploy/nm/flyover-captive.conf").read_text()
+
+
+def test_the_root_build_of_the_matrix_driver_is_pinned_to_a_commit():
+    script = (ROOT / "deploy/install.sh").read_text()
+    assert re.search(r'RGB_MATRIX_REF="\$\{RGB_MATRIX_REF:-[0-9a-f]{40}\}"', script)
+    assert "--upgrade pip" not in script
+
+
+def test_the_control_unit_that_runs_as_root_is_hardened():
+    control = (ROOT / "deploy/systemd/flyover-control.service").read_text()
+    for setting in ("NoNewPrivileges=yes", "ProtectHome=yes", "ProtectKernelTunables=yes"):
+        assert setting in control
+    assert "ProtectSystem" not in control.replace("ProtectSystem is left off", "")  # it must edit /etc/flyover
+
+
+def test_ci_token_is_read_only():
+    workflow = (ROOT / ".github/workflows/test.yml").read_text()
+    assert "permissions:\n  contents: read" in workflow

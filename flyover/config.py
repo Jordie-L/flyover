@@ -76,10 +76,14 @@ class Matrix:
     rgb_sequence: str = "RGB"
 
 
+#: The placeholder in config.example.toml. It is published, so the hotspot refuses to use it.
+DEFAULT_HOTSPOT_PASSWORD = "change-me-now"
+
+
 @dataclass(frozen=True)
 class Hotspot:
     ssid: str = "Flyover-Setup"
-    password: str = "change-me-now"
+    password: str = DEFAULT_HOTSPOT_PASSWORD
     retry_minutes: int = 5
 
 

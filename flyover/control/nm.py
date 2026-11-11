@@ -146,7 +146,21 @@ class NmcliBackend:
                 return split_terse(ssid)[0] or None
         return None
 
+    def _profile_exists(self, name: str) -> bool:
+        """Whether NetworkManager already has a saved connection called ``name``.
+
+        If that cannot be determined, answer yes: the caller then leaves the profile alone.
+        """
+        try:
+            out = self._nmcli("-t", "-f", "NAME", "connection", "show")
+        except NetworkError:
+            return True
+        return any(split_terse(line)[0] == name for line in out.splitlines())
+
     def connect(self, ssid: str, password: str, hidden: bool = False) -> None:
+        # A profile that was already saved under this name may be the network the device is
+        # using right now (a mistyped password must not delete it), so only clean up our own.
+        existed = self._profile_exists(ssid)
         args = ["device", "wifi", "connect", ssid, "ifname", self.iface]
         if password:
             # The password is visible to local users in the process list for the few seconds
@@ -157,7 +171,8 @@ class NmcliBackend:
         try:
             self._nmcli(*args, timeout=60)
         except NetworkError as exc:
-            self._nmcli("connection", "delete", "id", ssid, check=False)  # drop the failed profile
+            if not existed:
+                self._nmcli("connection", "delete", "id", ssid, check=False)  # drop the failed profile
             raise ConnectError(friendly_connect_error(str(exc))) from None
 
     def reconnect_saved(self, timeout_s: float) -> bool:

@@ -476,6 +476,8 @@ The hotspot uses NetworkManager's "shared" mode: the Pi takes the address `10.42
 - Home Wi-Fi credentials are stored by NetworkManager in files only root can read. They are never written to `config.toml`, the logs or the web pages.
 - While `nmcli` joins a network, the password is visible in the process list to other local users for a few seconds. The Pi has no other users.
 - The hotspot password is in `config.toml` and `net.json`, which are world-readable: the display needs it to draw the QR code.
+- The web UI refuses requests that look like they came from another web site (a wrong `Origin`, or a `Host` that is not an IP address, `localhost`, a single-label name or `*.local`). That blocks cross-site form posts and DNS rebinding, but it is not a login: reach the device by IP address, `flyover.local` or its hostname.
+- The setup hotspot will not start while `[hotspot] password` is still the example value `change-me-now`; the installer replaces it.
 - Pages escape every dynamic value, send a restrictive Content-Security-Policy, and refuse form bodies over 8 KB.
 - Keep your edited `config.toml` out of version control: it holds your location and hotspot password. (The repository's `.gitignore` excludes a `config.toml` in the repository root.)
 

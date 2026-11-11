@@ -163,6 +163,8 @@ My guesses that could not be checked, in the order I would suspect them:
 | 8 | `nmcli device connect wlan0` rejoins a saved network | The "router came back" retry never succeeds | `NmcliBackend.reconnect_saved` |
 | 9 | The driver's Python option names (see step 4) | `AttributeError` at startup | `display/backends/matrix.py` |
 | 10 | `isolcpus=domain,managed_irq,3 ...` is accepted by the installed kernel | Kernel ignores it, or boot problems (remove the flags from `cmdline.txt`) | `CMDLINE_FLAGS` in `deploy/install.sh` |
+| 11 | The hardening on the control unit (`NoNewPrivileges`, `ProtectHome`, `ProtectKernel*`, ...) does not stop `nmcli`, `iw` or the config edit | Control service fails to start, or Wi-Fi/settings changes fail with a permission error | `deploy/systemd/flyover-control.service` |
+| 12 | `rpi-rgb-led-matrix` at the pinned commit builds with the `make` targets in guess 1 | Driver step fails; try a newer reviewed commit via `RGB_MATRIX_REF` | `RGB_MATRIX_REF` in `deploy/install.sh` |
 
 ## Design decisions and why
 

@@ -292,10 +292,30 @@ def test_nmcli_connect_builds_the_command_and_cleans_up_on_failure():
     backend = NmcliBackend(run=run)
     with pytest.raises(nm.ConnectError, match="Wrong password"):
         backend.connect("Home Net", "pw123456", hidden=True)
-    connect = run.calls[0]
+    connect = next(c for c in run.calls if c[1:3] == ["device", "wifi"])
     assert connect[:5] == ["nmcli", "device", "wifi", "connect", "Home Net"]
     assert connect[-4:] == ["password", "pw123456", "hidden", "yes"]
-    assert run.calls[1][:4] == ["nmcli", "connection", "delete", "id"]  # failed profile removed
+    assert run.calls[-1] == ["nmcli", "connection", "delete", "id", "Home Net"]  # the failed profile is removed
+
+
+def test_a_failed_connect_keeps_a_profile_that_was_already_saved():
+    run = FakeRun({
+        "-f NAME connection show": (0, "HomeNet\nFlyover-Hotspot\n", ""),
+        "wifi connect": (4, "", "Error: Connection activation failed: (7) Secrets were required"),
+    })
+    with pytest.raises(nm.ConnectError, match="Wrong password"):
+        NmcliBackend(run=run).connect("HomeNet", "mistyped-1")
+    assert not any(c[1:3] == ["connection", "delete"] for c in run.calls)
+
+
+def test_a_failed_connect_keeps_the_profile_when_the_saved_list_cannot_be_read():
+    run = FakeRun({
+        "-f NAME connection show": (1, "", "Error: NetworkManager is not running"),
+        "wifi connect": (4, "", "Error: Connection activation failed: (7) Secrets were required"),
+    })
+    with pytest.raises(nm.ConnectError):
+        NmcliBackend(run=run).connect("HomeNet", "mistyped-1")
+    assert not any(c[1:3] == ["connection", "delete"] for c in run.calls)
 
 
 def test_nmcli_connect_to_an_open_network_sends_no_password():
@@ -394,3 +414,14 @@ def test_run_loop_reports_a_repeating_failure_once(make, caplog):
         thread.join(5)
     assert len(calls) >= 20
     assert caplog.text.count("network watcher error") == 1
+
+
+def test_the_published_default_hotspot_password_is_never_broadcast(make):
+    from flyover.config import DEFAULT_HOTSPOT_PASSWORD
+    cfg = parse_config(f'[hotspot]\npassword = "{DEFAULT_HOTSPOT_PASSWORD}"\n')
+    backend = FakeBackend(connected=None)
+    watch = NetWatch(backend, lambda: cfg, lambda net: None, now=Clock())
+    watch._open_hotspot(rescan=False)
+    watch._emit()
+    assert backend.hotspot is None and "hotspot_up" not in backend.calls
+    assert watch.state == State.HOTSPOT and "config.toml" in watch.snapshot()["error"]
