@@ -1,0 +1,51 @@
+[location]
+latitude  = 0.0            # decimal degrees, north positive
+longitude = 0.0            # decimal degrees, east positive
+# timezone = "America/Chicago"   # optional; by default it is looked up from the coordinates
+
+[flights]
+provider         = "airplanes_live"   # or "adsb_lol"
+radius_km        = 4.0     # a plane inside this circle counts as overhead
+max_altitude_ft  = 15000   # ignore anything higher
+hold_seconds     = 10      # keep showing a plane this long after it leaves the circle
+poll_idle_s      = 10      # seconds between position requests when nothing is near
+poll_active_s    = 5       # seconds between requests when a plane is near
+route_cache_days = 7       # how long a looked-up route is remembered
+
+[display]
+backend          = "auto"  # "auto", "matrix" or "preview"; auto uses the matrix when its library is installed
+brightness       = 60      # percent, daytime
+night_brightness = 15      # percent
+night_start      = "22:00" # local time; dim and switch to amber
+night_end        = "07:00"
+quiet_start      = ""      # optional; panel fully off between these times
+quiet_end        = ""
+clock_24h        = false
+temperature_unit = "F"     # "F" or "C"
+distance_unit    = "mi"    # "mi" or "km"; altitude is always feet and speed always knots
+
+[matrix]
+rows                = 64
+cols                = 64
+hardware_mapping    = "adafruit-hat"  # "adafruit-hat-pwm" with the PWM jumper fitted
+gpio_slowdown       = 2    # raise if the picture is unstable or ghosts
+pwm_bits            = 11   # lower gives a faster refresh and fewer colour steps
+pwm_lsb_nanoseconds = 130  # raise to reduce ghosting at the cost of refresh rate
+limit_refresh_hz    = 0    # 0 = no limit; a fixed value can remove a faint flicker
+panel_type          = ""   # "FM6126A" if the panel stays dark
+row_addr_type       = 0
+rgb_sequence        = "RGB" # change if colours are swapped
+
+[hotspot]
+ssid          = "Flyover-Setup"
+password      = "change-me-now"  # 8-63 characters
+retry_minutes = 5          # how often to retry saved networks while the hotspot is idle
+
+[network]
+boot_timeout_s           = 60   # how long to wait for a saved network at boot
+check_interval_s         = 30   # how often to test the connection
+failures_before_degraded = 3    # consecutive failed tests before reacting
+degraded_timeout_s       = 180  # how long to wait for a reconnect before opening the hotspot
+
+[web]
+port = 80

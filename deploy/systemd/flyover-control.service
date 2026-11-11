@@ -1,0 +1,27 @@
+[Unit]
+Description=Flyover control (web UI and Wi-Fi management)
+After=NetworkManager.service
+Wants=NetworkManager.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@INSTALL_DIR@
+# Root: it runs nmcli, binds port 80, and edits /etc/flyover/config.toml.
+ExecStart=@INSTALL_DIR@/.venv/bin/python -m flyover.control --config /etc/flyover/config.toml
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+PrivateTmp=yes
+# It is an unauthenticated HTTP server running as root, so take away what it does not need.
+# (ProtectSystem is left off: it edits /etc/flyover/config.toml and runs nmcli.)
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

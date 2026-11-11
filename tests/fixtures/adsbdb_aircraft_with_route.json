@@ -1,0 +1,26 @@
+{
+  "response": {
+    "aircraft": {
+      "type": "737-824",
+      "icao_type": "B738",
+      "manufacturer": "Boeing",
+      "mode_s": "A1B2C3",
+      "registration": "N37290",
+      "registered_owner": "United Airlines"
+    },
+    "flightroute": {
+      "callsign": "UAL1234",
+      "callsign_icao": "UAL1234",
+      "callsign_iata": "UA1234",
+      "airline": {"name": "United Airlines", "icao": "UAL", "iata": "UA", "country": "United States",
+                  "country_iso": "US", "callsign": "UNITED"},
+      "origin": {"country_iso_name": "US", "country_name": "United States", "elevation": 13,
+                 "iata_code": "SFO", "icao_code": "KSFO", "latitude": 37.6213, "longitude": -122.379,
+                 "municipality": "San Francisco", "name": "San Francisco International Airport"},
+      "destination": {"country_iso_name": "US", "country_name": "United States", "elevation": 672,
+                      "iata_code": "ORD", "icao_code": "KORD", "latitude": 41.9742,
+                      "longitude": -87.9073, "municipality": "Chicago",
+                      "name": "Chicago O'Hare International Airport"}
+    }
+  }
+}
