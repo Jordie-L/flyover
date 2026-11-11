@@ -126,6 +126,14 @@ def test_the_control_unit_that_runs_as_root_is_hardened():
     assert "ProtectSystem" not in control.replace("ProtectSystem is left off", "")  # it must edit /etc/flyover
 
 
+def test_display_waits_for_the_network_but_control_does_not():
+    display = (ROOT / "deploy/systemd/flyover-display.service").read_text()
+    control = (ROOT / "deploy/systemd/flyover-control.service").read_text()
+    assert re.search(r"^After=.*network-online\.target", display, re.M)
+    assert re.search(r"^Wants=network-online\.target", display, re.M)
+    assert "network-online" not in control.replace("deliberately", "")  # it raises the setup hotspot
+
+
 def test_ci_token_is_read_only():
     workflow = (ROOT / ".github/workflows/test.yml").read_text()
     assert "permissions:\n  contents: read" in workflow

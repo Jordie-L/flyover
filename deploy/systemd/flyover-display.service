@@ -1,6 +1,11 @@
 [Unit]
 Description=Flyover display (aircraft overhead, clock and weather on the LED matrix)
-After=local-fs.target
+After=local-fs.target network-online.target
+# Without this the first weather and flight requests fail with a DNS error at boot, and
+# weather then waits 300 s to retry. (If there is no network at all, NetworkManager's
+# wait-online gives up after its own timeout and the display starts anyway.)
+# The control unit deliberately does not wait: it must be up to raise the setup hotspot.
+Wants=network-online.target
 # Never give up restarting: this device sits in someone else's house.
 StartLimitIntervalSec=0
 
