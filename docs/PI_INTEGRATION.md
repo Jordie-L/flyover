@@ -4,7 +4,7 @@ For whoever brings this up on the real Raspberry Pi (a Pi Zero 2 W, Raspberry Pi
 
 ## What you are inheriting
 
-All the software exists and has automated tests (`pytest`, 310 tests, about 5 seconds, run in CI). It was written in a cloud sandbox that had **no Pi, no panel, no access to the live data services, and no NetworkManager**. Everything that touches those was written from documentation and checked only against stand-ins. This document is the list of what that means.
+All the software exists and has automated tests (`pytest`, 346 tests, about 5 seconds, run in CI). It was written in a cloud sandbox that had **no Pi, no panel, no access to the live data services, and no NetworkManager**. Everything that touches those was written from documentation and checked only against stand-ins. This document is the list of what that means.
 
 Read [`README.md`](../README.md) first for the design. This file covers only what needs verifying and how.
 
@@ -123,13 +123,13 @@ When the panel and bonnet are fitted (see README, "Bonnet modifications": the **
    ```
 
    Use `adafruit-hat-pwm` if the GPIO4–GPIO18 jumper is fitted. This settles wiring and the `[matrix]` values before Flyover is involved.
-2. Re-run `sudo deploy/install.sh` **without** `--no-matrix`, then reboot. This builds the Python binding and applies the boot settings.
+2. Re-run `sudo deploy/install.sh` **without** `--no-matrix`, then reboot. This builds the driver's Python binding with `pip install` from the pinned checkout (it compiles C++: allow several minutes on this board, and run it under `nohup`) and applies the boot settings.
 3. Confirm `/opt/flyover/.venv/bin/python -c "import rgbmatrix"` works, then `journalctl -u flyover-display` shows `"backend": "matrix"` in `/run/flyover/status.json`.
 4. Put the working values in `/etc/flyover/config.toml` under `[matrix]`.
 
 Check:
 
-- **Option names.** `display/backends/matrix.py` sets `gpio_slowdown`, `limit_refresh_rate_hz`, `row_address_type`, `led_rgb_sequence`, `panel_type`, `drop_privileges`, `pwm_bits`, `pwm_lsb_nanoseconds`. These were written from the driver's documentation, not run. A wrong name raises `AttributeError` at startup (it surfaces in the journal); check against `bindings/python/rgbmatrix/core.pyx` in the driver checkout.
+- **Option names.** `display/backends/matrix.py` sets `hardware_mapping`, `rows`, `cols`, `chain_length`, `parallel`, `gpio_slowdown`, `pwm_bits`, `pwm_lsb_nanoseconds`, `limit_refresh_rate_hz`, `row_address_type`, `led_rgb_sequence`, `panel_type`, `drop_privileges`, and assigns `matrix.brightness`. All of these names were confirmed to exist in `bindings/python/rgbmatrix/core.pyx` at the pinned driver commit, by reading the upstream file. What is still unverified is their *behaviour* on the panel (for example what `panel_type` does on yours). A wrong name would raise `AttributeError` at startup and show in the journal.
 - **Brightness.** The code assigns `matrix.brightness` (1 to 100) and uses a black frame at brightness 1 for "off". Confirm night mode really dims.
 - **Privilege drop with the real driver.** The backend sets `drop_privileges = False`, then `display/privileges.py` drops to `daemon` after startup. Confirm the panel keeps updating after the drop. If the driver needs root later (it should not), use `--keep-root` in the unit.
 - **Boot settings.** After reboot: `cat /proc/cmdline` shows the `isolcpus=...` flags on one line, `lsmod | grep snd_bcm2835` is empty.
@@ -153,7 +153,7 @@ My guesses that could not be checked, in the order I would suspect them:
 
 | # | Guess | If wrong | Fix in |
 |---|---|---|---|
-| 1 | `install.sh` package names and the driver build (`make build-python PYTHON=...`, `make install-python PYTHON=...`) work on current Raspberry Pi OS | Script stops at that step | `deploy/install.sh` |
+| 1 | `install.sh` package names are right for current Raspberry Pi OS | Script stops at the `apt-get` step | `deploy/install.sh` |
 | 2 | `/boot/firmware/{config,cmdline}.txt` are the right files (Bookworm onward; older images use `/boot`) | Boot settings not applied; `boot_dir` falls back to `/boot` if `/boot/firmware` is absent | `boot_dir` in `deploy/install.sh` |
 | 3 | `raspi-config nonint get_wifi_country` prints the country code (empty if unset) | A false "no country" warning, or a missed one | end of `deploy/install.sh` |
 | 4 | `ProtectSystem=full` and `ProtectHome=yes` on the display unit do not stop the matrix driver (`/dev/mem`) | The panel stays dark with a permission error | `deploy/systemd/flyover-display.service` |
@@ -164,7 +164,8 @@ My guesses that could not be checked, in the order I would suspect them:
 | 9 | The driver's Python option names (see step 4) | `AttributeError` at startup | `display/backends/matrix.py` |
 | 10 | `isolcpus=domain,managed_irq,3 ...` is accepted by the installed kernel | Kernel ignores it, or boot problems (remove the flags from `cmdline.txt`) | `CMDLINE_FLAGS` in `deploy/install.sh` |
 | 11 | The hardening on the control unit (`NoNewPrivileges`, `ProtectHome`, `ProtectKernel*`, ...) does not stop `nmcli`, `iw` or the config edit | Control service fails to start, or Wi-Fi/settings changes fail with a permission error | `deploy/systemd/flyover-control.service` |
-| 12 | `rpi-rgb-led-matrix` at the pinned commit builds with the `make` targets in guess 1 | Driver step fails; try a newer reviewed commit via `RGB_MATRIX_REF` | `RGB_MATRIX_REF` in `deploy/install.sh` |
+| 12 | `pip install` of the pinned `rpi-rgb-led-matrix` checkout builds on the Pi (needs `python3-dev`, a C++ compiler and `cmake`; fetches `scikit-build-core` and Cython from PyPI). The upstream files confirm it is a `pip`-installable package at that commit and that its `Makefile` has no `build-python` target; it has not been built on a Pi | Driver step fails; read pip's error, or try a newer reviewed commit via `RGB_MATRIX_REF` | the driver step in `deploy/install.sh` |
+| 13 | `nmcli device wifi connect` always creates a new profile, even for a network that is already saved | A failed attempt leaves a duplicate profile, or removes the wrong one. Cleanup is by the UUIDs added during the attempt, never by name | `NmcliBackend._discard_new_profiles` in `flyover/control/nm.py` |
 
 ## Design decisions and why
 

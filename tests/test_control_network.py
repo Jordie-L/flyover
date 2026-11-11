@@ -257,15 +257,23 @@ def test_friendly_connect_errors(stderr, expected):
 
 
 class FakeRun:
-    """Stands in for subprocess.run: matches on the argument list."""
+    """Stands in for subprocess.run: matches on the argument list.
+
+    A reply may be one ``(code, stdout, stderr)`` tuple, or a list of them that is used in order
+    (the last one repeats), for commands whose answer changes between calls.
+    """
 
     def __init__(self, replies):
         self.replies, self.calls = replies, []
 
     def __call__(self, argv, **kwargs):
         self.calls.append(argv)
-        for needle, (code, out, err) in self.replies.items():
+        for needle, reply in self.replies.items():
             if needle in " ".join(argv):
+                if isinstance(reply, list):
+                    code, out, err = reply.pop(0) if len(reply) > 1 else reply[0]
+                else:
+                    code, out, err = reply
                 return subprocess.CompletedProcess(argv, code, out, err)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
@@ -287,35 +295,63 @@ def test_a_running_hotspot_does_not_count_as_connected():
     assert NmcliBackend(run=run).connected_ssid() is None
 
 
-def test_nmcli_connect_builds_the_command_and_cleans_up_on_failure():
-    run = FakeRun({"wifi connect": (4, "", "Error: Connection activation failed: (7) Secrets were required")})
-    backend = NmcliBackend(run=run)
+WRONG_PASSWORD = (4, "", "Error: Connection activation failed: (7) Secrets were required")
+
+
+def deletes(run):
+    return [c for c in run.calls if c[1:3] == ["connection", "delete"]]
+
+
+def test_nmcli_connect_builds_the_command():
+    run = FakeRun({"wifi connect": WRONG_PASSWORD})
     with pytest.raises(nm.ConnectError, match="Wrong password"):
-        backend.connect("Home Net", "pw123456", hidden=True)
+        NmcliBackend(run=run).connect("Home Net", "pw123456", hidden=True)
     connect = next(c for c in run.calls if c[1:3] == ["device", "wifi"])
     assert connect[:5] == ["nmcli", "device", "wifi", "connect", "Home Net"]
     assert connect[-4:] == ["password", "pw123456", "hidden", "yes"]
-    assert run.calls[-1] == ["nmcli", "connection", "delete", "id", "Home Net"]  # the failed profile is removed
 
 
-def test_a_failed_connect_keeps_a_profile_that_was_already_saved():
+def test_a_failed_connect_removes_the_profile_it_created():
     run = FakeRun({
-        "-f NAME connection show": (0, "HomeNet\nFlyover-Hotspot\n", ""),
-        "wifi connect": (4, "", "Error: Connection activation failed: (7) Secrets were required"),
+        "-f UUID connection show": [(0, "uuid-a\nuuid-hotspot\n", ""),             # before
+                                    (0, "uuid-a\nuuid-hotspot\nuuid-new\n", "")],  # after
+        "wifi connect": WRONG_PASSWORD,
     })
     with pytest.raises(nm.ConnectError, match="Wrong password"):
-        NmcliBackend(run=run).connect("HomeNet", "mistyped-1")
-    assert not any(c[1:3] == ["connection", "delete"] for c in run.calls)
+        NmcliBackend(run=run).connect("Home Net", "pw123456")
+    assert deletes(run) == [["nmcli", "connection", "delete", "uuid", "uuid-new"]]
 
 
-def test_a_failed_connect_keeps_the_profile_when_the_saved_list_cannot_be_read():
+def test_a_failed_connect_never_deletes_a_saved_profile_with_the_same_name():
+    """nmcli adds a second profile for a network that is already saved. Only that new one goes;
+    the saved one (which may be the network in use right now) is untouched."""
     run = FakeRun({
-        "-f NAME connection show": (1, "", "Error: NetworkManager is not running"),
-        "wifi connect": (4, "", "Error: Connection activation failed: (7) Secrets were required"),
+        "-f UUID connection show": [(0, "uuid-homenet\n", ""), (0, "uuid-homenet\nuuid-duplicate\n", "")],
+        "wifi connect": WRONG_PASSWORD,
     })
     with pytest.raises(nm.ConnectError):
         NmcliBackend(run=run).connect("HomeNet", "mistyped-1")
-    assert not any(c[1:3] == ["connection", "delete"] for c in run.calls)
+    assert deletes(run) == [["nmcli", "connection", "delete", "uuid", "uuid-duplicate"]]
+
+
+def test_a_failed_connect_that_added_nothing_deletes_nothing():
+    run = FakeRun({"-f UUID connection show": (0, "uuid-a\n", ""), "wifi connect": WRONG_PASSWORD})
+    with pytest.raises(nm.ConnectError):
+        NmcliBackend(run=run).connect("HomeNet", "mistyped-1")
+    assert deletes(run) == []
+
+
+@pytest.mark.parametrize("replies", [
+    (  # the list cannot be read before the attempt
+        [(1, "", "Error: NetworkManager is not running"), (0, "uuid-a\nuuid-new\n", "")]),
+    (  # ... or after it
+        [(0, "uuid-a\n", ""), (1, "", "Error: NetworkManager is not running")]),
+])
+def test_when_the_saved_list_cannot_be_read_nothing_is_deleted(replies):
+    run = FakeRun({"-f UUID connection show": replies, "wifi connect": WRONG_PASSWORD})
+    with pytest.raises(nm.ConnectError):
+        NmcliBackend(run=run).connect("HomeNet", "mistyped-1")
+    assert deletes(run) == []
 
 
 def test_nmcli_connect_to_an_open_network_sends_no_password():
