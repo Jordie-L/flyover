@@ -13,6 +13,7 @@ from ..config import ConfigError
 from ..state import RunPaths
 from .app import DisplayApp
 from .backends import BackendUnavailable
+from .privileges import drop_privileges
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -24,6 +25,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="where frame.png, status.json and net.json live")
     p.add_argument("--data-dir", type=Path, default=Path("/var/lib/flyover"),
                    help="where the route cache and last known time zone are kept")
+    p.add_argument("--keep-root", action="store_true",
+                   help="do not drop root privileges after the display hardware is initialised")
     p.add_argument("--once", action="store_true", help="render a single frame and exit")
     p.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     return p.parse_args(argv)
@@ -44,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.once:
         app.run_once()
         return 0
+    if not args.keep_root:
+        drop_privileges()
 
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):

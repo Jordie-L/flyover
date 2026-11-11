@@ -18,7 +18,7 @@ from PIL import Image
 
 from .. import __version__, clock
 from .. import geo
-from ..config import Config, ConfigError, LocationNotSet, load_config
+from ..config import Config, ConfigStore, LocationNotSet
 from ..models import FlightView
 from ..providers import weather
 from ..providers.flights import FlightFeed
@@ -31,6 +31,7 @@ from .scenes.base import Context, Scene, blank
 from .scenes.boot import BootScene
 from .scenes.flight import FlightScene
 from .scenes.idle import IdleScene
+from .scenes.wifi_setup import WifiSetupScene
 from .theme import brightness_for, mode_for, palette_for
 
 log = logging.getLogger(__name__)
@@ -55,15 +56,14 @@ class DisplayApp:
         flight_feed: FlightFeed | None = None,
         routes: RouteResolver | None = None,
     ) -> None:
-        self.config_path = config_path
         self.paths = paths
         self.data_dir = data_dir
         self._fetch_weather = fetch_weather
         self._time_trusted = time_trusted
         self._epoch = epoch
 
-        self.cfg: Config = load_config(config_path)
-        self._config_mtime = self._mtime()
+        self._config = ConfigStore(config_path)
+        self._last_location = self.cfg.location
         self.backend = backend or create_backend(
             backend_override or self.cfg.display.backend, self.cfg, paths
         )
@@ -78,6 +78,7 @@ class DisplayApp:
         self._selector = Selector()
         self._idle: Scene = IdleScene()
         self._flight: Scene = FlightScene()
+        self._setup: Scene = WifiSetupScene()
         self._boot: Scene = BootScene()
         self._started_at = time.time()
         self._last_status: dict | None = None
@@ -86,27 +87,15 @@ class DisplayApp:
 
     # -- config -----------------------------------------------------------
 
-    def _mtime(self) -> float:
-        try:
-            return self.config_path.stat().st_mtime
-        except OSError:
-            return 0.0
+    @property
+    def cfg(self) -> Config:
+        """The current configuration (re-read if the file changed)."""
+        return self._config.get()
 
-    def _reload_config_if_changed(self) -> None:
-        mtime = self._mtime()
-        if mtime == self._config_mtime:
-            return
-        self._config_mtime = mtime
-        try:
-            new = load_config(self.config_path)
-        except ConfigError as exc:
-            log.error("keeping the previous configuration: %s", exc)
-            return
-        moved = new.location != self.cfg.location
-        self.cfg = new
-        log.info("configuration reloaded")
-        if moved:
-            self._weather.poke()
+    def _check_location(self, cfg: Config) -> None:
+        if cfg.location != self._last_location:
+            self._last_location = cfg.location
+            self._weather.poke()  # fetch for the new place right away
             self._feed.poke()
 
     # -- data -------------------------------------------------------------
@@ -156,6 +145,15 @@ class DisplayApp:
         return FlightView(a, route, pick.lat, pick.lon, pick.distance_km, pick.inside,
                           pick.others, plausible)
 
+    @staticmethod
+    def _needs_setup_screen(net: object) -> bool:
+        """True while the setup hotspot is up (with its details) or a connection is being made."""
+        if not isinstance(net, dict):
+            return False
+        return net.get("state") == "CONNECTING" or (
+            net.get("state") == "HOTSPOT" and isinstance(net.get("hotspot"), dict)
+        )
+
     def _count_overhead(self, view: FlightView, ctx: Context) -> None:
         """Keep the day's tally of distinct aircraft seen overhead (resets at local midnight)."""
         today = ctx.now.date().isoformat()
@@ -165,6 +163,8 @@ class DisplayApp:
             self._overhead_today.add(view.aircraft.hex)
 
     def _choose_scene(self, ctx: Context) -> Scene:
+        if self._needs_setup_screen(ctx.net):
+            return self._setup
         loc = self.cfg.location
         pick = self._selector.update(
             self._feed.aircraft, ctx.epoch, (loc.latitude, loc.longitude), self.cfg.flights
@@ -176,7 +176,7 @@ class DisplayApp:
         return self._flight
 
     def tick(self) -> None:
-        self._reload_config_if_changed()
+        self._check_location(self.cfg)
         ctx, mode = self._context()
         self._feed.quiet = mode == "off"
         if mode == "off":

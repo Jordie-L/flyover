@@ -1,0 +1,21 @@
+[Unit]
+Description=Flyover display (aircraft overhead, clock and weather on the LED matrix)
+After=local-fs.target
+# Never give up restarting: this device sits in someone else's house.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@INSTALL_DIR@
+# Starts as root to claim the GPIO hardware, then drops to the "daemon" user
+# (flyover/display/privileges.py). It writes only to /run/flyover and /var/lib/flyover.
+ExecStart=@INSTALL_DIR@/.venv/bin/python -m flyover.display --config /etc/flyover/config.toml
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

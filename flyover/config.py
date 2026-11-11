@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import tomllib
+import threading
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -253,3 +254,39 @@ def load_config(path: str | Path) -> Config:
         return parse_config(text)
     except ConfigError as exc:
         raise ConfigError(f"{path}: {exc}") from None
+
+
+class ConfigStore:
+    """The current configuration, re-read whenever the file changes.
+
+    A file that no longer parses is logged and the last good configuration is
+    kept, so a typo made while editing never takes the display down.
+    ``version`` increases each time a new configuration is accepted.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.version = 0
+        self._lock = threading.Lock()
+        self._cfg = load_config(self.path)
+        self._mtime = self._stat()
+
+    def _stat(self) -> float:
+        try:
+            return self.path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def get(self) -> Config:
+        with self._lock:
+            mtime = self._stat()
+            if mtime != self._mtime:
+                self._mtime = mtime
+                try:
+                    self._cfg = load_config(self.path)
+                except ConfigError as exc:
+                    log.error("keeping the previous configuration: %s", exc)
+                else:
+                    self.version += 1
+                    log.info("configuration reloaded")
+            return self._cfg

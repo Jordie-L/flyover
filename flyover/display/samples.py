@@ -16,6 +16,7 @@ from .scenes.base import Context, Scene
 from .scenes.boot import BootScene
 from .scenes.flight import FlightScene
 from .scenes.idle import IdleScene
+from .scenes.wifi_setup import WifiSetupScene
 from .theme import NIGHT
 
 #: A fixed "now" so the pictures never change from run to run.
@@ -62,6 +63,9 @@ def build_samples() -> list[tuple[str, Scene, Context]]:
     """(name, scene, context) for every state worth looking at."""
     idle = IdleScene()
     flight = FlightScene()
+    setup = WifiSetupScene()
+    hotspot = {"ssid": "Flyover-Setup", "password": "change-me-now", "ip": "10.42.0.1"}
+    long_hotspot = {"ssid": "A-Rather-Long-Hotspot-Name-32chr", "password": "p" * 40, "ip": "10.42.0.1"}
     base = sample_flight()
     climbing = replace(base.aircraft, alt_ft=35000, vert_rate_fpm=1800, track_deg=45.0,
                        ground_speed_kt=451.0, callsign="DAL88", type_code="A359")
@@ -94,4 +98,9 @@ def build_samples() -> list[tuple[str, Scene, Context]]:
             base, route_plausible=False, distance_km=12.0))),
         ("flight_icao_codes", flight, sample_context(flight=replace(base, route=four_letter))),
         ("flight_night", flight, sample_context(flight=base, palette=NIGHT)),
+        ("wifi_setup", setup, sample_context(net={"state": "HOTSPOT", "hotspot": hotspot})),
+        ("wifi_setup_wrong_password", setup, sample_context(net={
+            "state": "HOTSPOT", "hotspot": hotspot, "error": "Wrong password"})),
+        ("wifi_setup_long_names", setup, sample_context(net={"state": "HOTSPOT", "hotspot": long_hotspot})),
+        ("wifi_connecting", setup, sample_context(net={"state": "CONNECTING", "ssid": "HomeNet"})),
     ]
