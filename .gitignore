@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+
+# Local runtime state (see README: --run-dir, --data-dir)
+/run/
+/data/
+
+# Your own configuration holds your location and hotspot password
+/config.toml
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
