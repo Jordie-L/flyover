@@ -164,13 +164,13 @@ Reboot when the script says so, then open `http://flyover.local/`. The page show
 
 ### What the installer does
 
-The script is safe to run again, which is also how you update. Each step can be done by hand.
+The script is safe to run again, which is also how you update. Each step can be done by hand. Run it from a checkout outside `/home`, `/root` and `/run/user`: the services run with `ProtectHome=yes` and could not see their own code there, so the script refuses (clone to `/opt/flyover`, as above).
 
 | Step | Action |
 |---|---|
-| 1 | Installs system packages: Python virtual-environment support, git, `iw`, `dnsmasq-base`, and (unless `--no-matrix`) Cython and a C++ compiler. |
+| 1 | Installs system packages: Python virtual-environment support, git, `iw`, `dnsmasq-base`, and (unless `--no-matrix`) a C++ compiler and CMake. |
 | 2 | Creates a Python virtual environment at `.venv` in the checkout and installs Flyover into it. |
-| 3 | Builds and installs the [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) Python binding into that environment, and checks that `import rgbmatrix` works. |
+| 3 | Fetches the [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) driver at a pinned commit and installs its Python binding into that environment with `pip install` (it compiles C++, so allow several minutes on the Zero 2 W), then checks that `import rgbmatrix` works. |
 | 4 | Turns off onboard audio (`dtparam=audio=off` in `/boot/firmware/config.txt`, and a blacklist for `snd_bcm2835`): the matrix driver refuses to start while it is loaded. |
 | 5 | Reserves one CPU core for the panel refresh thread by appending `isolcpus=domain,managed_irq,3 nohz_full=3 rcu_nocbs=3 irqaffinity=0,1,2` to the single line of `/boot/firmware/cmdline.txt`. |
 | 6 | Creates `/etc/flyover`, `/var/lib/flyover` (owned by `daemon`) and a boot-time rule that creates `/run/flyover` shared between the two services. |
@@ -546,6 +546,12 @@ python -m flyover.control --config config.example.toml --run-dir ./run --fake-ne
 
 Both write into `./run`, so the web UI shows the live preview. Use your own copy of the config (with your coordinates) rather than editing `config.example.toml`: the settings page edits whichever file it is given.
 
+The setup hotspot refuses to open with the example password, so to see the Wi-Fi setup flow in `--fake-network` mode, give your copy a password first:
+
+```bash
+python -m flyover.control.config_edit my-config.toml hotspot.password=any-8-to-63-characters
+```
+
 Render every screen:
 
 ```bash
@@ -596,7 +602,7 @@ The installer leaves an existing `/etc/flyover/config.toml` untouched. (There is
 
 ### Remote access
 
-Once the display is in someone else's home you are no longer on its network. A mesh VPN such as [Tailscale](https://tailscale.com) on the Pi gives you SSH and the web UI from anywhere without opening ports on their router. Install it before handing the device over, following Tailscale's instructions for Raspberry Pi OS, then `sudo tailscale up --ssh`.
+Once the display is in someone else's home you are no longer on its network. A mesh VPN such as [Tailscale](https://tailscale.com) on the Pi gives you SSH and the web UI from anywhere without opening ports on their router. Install it before handing the device over, following Tailscale's instructions for Raspberry Pi OS, then `sudo tailscale up --ssh`. Open the web UI over Tailscale by the short name (`http://flyover/`) or the tailnet IP. Flyover refuses `Host` names that contain a dot unless they end in `.local`, so the full `flyover.<tailnet>.ts.net` name gets a 403.
 
 ### Unattended reliability
 

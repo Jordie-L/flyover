@@ -3,8 +3,8 @@
 #
 #   sudo deploy/install.sh [--no-matrix] [--volatile-logs] [--no-watchdog]
 #
-# Safe to run again: every step checks before it changes anything. Run it from the
-# checkout you want to install from; services point at that directory.
+# Safe to run again: every step checks before it changes anything. Run it from a checkout
+# outside /home, /root and /run/user (the services cannot see those); /opt/flyover is expected.
 #
 #   --no-matrix      skip the LED matrix driver and the boot settings it needs
 #                    (use this on a Pi with no panel; the display runs in preview mode)
@@ -66,6 +66,15 @@ random_password() {
     python3 -c 'import secrets, string; print("".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(10)))'
 }
 
+# The services run with ProtectHome=yes, which hides /home, /root and /run/user, so code
+# checked out there would be invisible to them. Takes a resolved (physical) path.
+checkout_location_ok() {
+    case "$1" in
+        /home|/home/*|/root|/root/*|/run/user|/run/user/*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 boot_dir() {
     if [[ -d /boot/firmware ]]; then echo /boot/firmware; else echo /boot; fi
 }
@@ -86,7 +95,9 @@ main() {
 
     [[ $EUID -eq 0 ]] || die "run as root: sudo deploy/install.sh"
     local repo venv boot reboot_needed=0
-    repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+    checkout_location_ok "$repo" \
+        || die "this checkout is in $repo, which the services cannot read (they hide /home, /root and /run/user). Clone it to /opt/flyover and run the installer from there."
     venv="$repo/.venv"
     boot="$(boot_dir)"
     systemctl is-active --quiet NetworkManager \
@@ -96,7 +107,7 @@ main() {
     export DEBIAN_FRONTEND=noninteractive
     local packages=(python3-venv python3-dev python3-pip git iw dnsmasq-base)
     if [[ $with_matrix -eq 1 ]]; then
-        packages+=(cython3 build-essential)  # to build the matrix driver's Python binding
+        packages+=(build-essential cmake)  # to build the matrix driver's Python binding
     fi
     apt-get update -qq
     apt-get install -y -qq "${packages[@]}"
@@ -112,8 +123,9 @@ main() {
         fi
         git -C "$RGB_MATRIX_DIR" fetch --quiet origin "$RGB_MATRIX_REF" 2>/dev/null || true
         git -C "$RGB_MATRIX_DIR" checkout --quiet "$RGB_MATRIX_REF"
-        make -C "$RGB_MATRIX_DIR" build-python PYTHON="$venv/bin/python" >/dev/null
-        make -C "$RGB_MATRIX_DIR" install-python PYTHON="$venv/bin/python" >/dev/null
+        # At the pinned commit the binding is a normal Python package (scikit-build-core + Cython),
+        # built from the driver's root directory. This compiles C++ and takes a few minutes.
+        "$venv/bin/pip" install --quiet "$RGB_MATRIX_DIR"
         "$venv/bin/python" -c "import rgbmatrix" \
             || warn "the rgbmatrix module did not install; the display will use the preview backend"
 

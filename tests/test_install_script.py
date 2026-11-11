@@ -129,3 +129,38 @@ def test_the_control_unit_that_runs_as_root_is_hardened():
 def test_ci_token_is_read_only():
     workflow = (ROOT / ".github/workflows/test.yml").read_text()
     assert "permissions:\n  contents: read" in workflow
+
+
+def test_the_driver_binding_is_built_with_pip_not_the_removed_make_targets():
+    """At the pinned commit the binding is a pip-installable package; the old `make build-python`
+    and `make install-python` targets no longer exist upstream."""
+    script = (ROOT / "deploy/install.sh").read_text()
+    assert '"$venv/bin/pip" install --quiet "$RGB_MATRIX_DIR"' in script
+    assert "build-python" not in script and "install-python" not in script
+    packages = re.search(r"packages\+=\(([^)]*)\)", script).group(1)
+    assert "build-essential" in packages and "cmake" in packages and "cython3" not in packages
+
+
+@pytest.mark.parametrize("path, ok", [
+    ("/opt/flyover", True),
+    ("/srv/flyover", True),
+    ("/usr/local/src/flyover", True),
+    ("/homework/flyover", True),  # only /home itself and below are hidden
+    ("/rootkit", True),
+    ("/home", False),
+    ("/home/pi/flyover", False),
+    ("/root", False),
+    ("/root/flyover", False),
+    ("/run/user/1000/flyover", False),
+])
+def test_checkout_location_is_rejected_where_the_services_cannot_see_it(path, ok):
+    assert bash('checkout_location_ok "$1"', path).returncode == (0 if ok else 1)
+
+
+def test_the_location_is_checked_on_the_resolved_path_before_anything_changes():
+    script = (ROOT / "deploy/install.sh").read_text()
+    main = script[script.index("main() {"):]
+    assert "pwd -P" in main  # a symlink into /home is caught as well
+    assert main.index("checkout_location_ok") < main.index("apt-get")
+    assert main.index("checkout_location_ok") < main.index("systemctl enable")
+    assert "/opt/flyover" in main[main.index("checkout_location_ok"):main.index("apt-get")]  # tells the user where to go
