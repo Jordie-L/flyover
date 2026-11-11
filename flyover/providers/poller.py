@@ -21,14 +21,15 @@ class Poller(Generic[T]):
         self,
         name: str,
         fetch: Callable[[], T],
-        interval_s: float,
+        interval_s: float | Callable[[], float],
         *,
         max_backoff_s: float = 300.0,
         on_result: Callable[[T], None] | None = None,
     ) -> None:
+        """``interval_s`` may be a function, so the pace can adapt to what the data shows."""
         self.name = name
         self._fetch = fetch
-        self._interval = interval_s
+        self._interval = interval_s if callable(interval_s) else (lambda: interval_s)
         self._max_backoff = max_backoff_s
         self._on_result = on_result
         self._lock = threading.Lock()
@@ -63,7 +64,7 @@ class Poller(Generic[T]):
                 self._failures += 1
                 self._error = str(exc) or exc.__class__.__name__
                 failures = self._failures
-            delay = min(self._max_backoff, self._interval * 2**failures)
+            delay = min(self._max_backoff, self._interval() * 2**failures)
             log.warning("%s: %s (retrying in %.0f s)", self.name, self._error, delay)
             return delay
         with self._lock:
@@ -76,7 +77,7 @@ class Poller(Generic[T]):
                 self._on_result(value)
             except Exception:
                 log.exception("%s: result handler failed", self.name)
-        return self._interval
+        return self._interval()
 
     # -- thread control ---------------------------------------------------
 

@@ -7,6 +7,7 @@ and look at the diff in the gallery before committing.
 
 import os
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -229,3 +230,77 @@ def test_a_failing_scene_does_not_stop_the_loop(make_app, monkeypatch):
     stop.set()
     thread.join(5)
     assert len(calls) >= 2
+
+
+# -- flights through the app ------------------------------------------------------
+
+
+@pytest.fixture
+def flight_app(make_app, tmp_path):
+    """An app whose feed reports one aircraft directly overhead and whose route API is faked."""
+    import json
+
+    from flyover.providers.flights import FlightFeed
+    from flyover.providers.routes import RouteResolver
+
+    fixtures = Path(__file__).parent / "fixtures"
+    route_reply = json.loads((fixtures / "adsbdb_aircraft_with_route.json").read_text())
+    sky = {"ac": [{"hex": "a1b2c3", "flight": "UAL1234", "t": "B738", "alt_baro": 2400, "gs": 0,
+                   "lat": 41.9, "lon": -87.6, "baro_rate": -640, "track": 270}]}
+    state = {"sky": sky}
+
+    def build(config_text=CONFIG):
+        app = make_app(config_text)
+        feed = FlightFeed(lambda: app.cfg, get=lambda url: state["sky"], now=time.time)
+        resolver = RouteResolver(tmp_path / "data" / "routes.sqlite", lambda: 7,
+                                 get=lambda url: route_reply)
+        app._feed, app._routes = feed, resolver
+        return app, state
+
+    return build
+
+
+def test_an_overhead_aircraft_switches_to_the_flight_scene(flight_app, tmp_path):
+    app, _ = flight_app()
+    app._feed.poller.step()
+    app.tick()
+    status = read_json(tmp_path / "run" / "status.json")
+    assert status["scene"] == "flight"
+    assert status["flights"] == {"ok": True, "error": None, "in_range": 1, "overhead_today": 1}
+    before = app.backend.frames[-1][0]
+    app._routes.drain()  # the route arrives from the background lookup
+    app.tick()
+    assert app.backend.frames[-1][0].tobytes() != before.tobytes()  # SFO > ORD now drawn
+
+
+def test_the_display_returns_to_idle_once_the_hold_time_has_passed(flight_app):
+    app, state = flight_app()
+    clock = [time.time()]
+    app._epoch = lambda: clock[0]
+    app._feed.poller.step()
+    app.tick()
+    assert app._last_status["scene"] == "flight"
+    state["sky"] = {"ac": []}
+    app._feed.poller.step()
+    clock[0] += app.cfg.flights.hold_seconds - 1  # still held
+    app.tick()
+    assert app._last_status["scene"] == "flight"
+    clock[0] += 2  # hold expired
+    app.tick()
+    assert app._last_status["scene"] == "idle"
+
+
+def test_quiet_hours_pause_the_flight_feed(flight_app):
+    cfg = ('[location]\nlatitude = 41.9\nlongitude = -87.6\n[display]\n'
+           'quiet_start = "00:00"\nquiet_end = "23:59"\n')
+    app, _ = flight_app(cfg)
+    app.tick()
+    assert app._feed.quiet and app._last_status["scene"] == "off"
+
+
+def test_without_a_location_the_clock_still_runs_and_the_feed_explains_why(make_app):
+    app = make_app(config_text="")
+    app._feed.poller.step()
+    assert "location" in app._feed.poller.error
+    app.tick()  # still renders the clock
+    assert app._last_status["scene"] == "idle"

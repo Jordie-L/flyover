@@ -23,10 +23,13 @@ class Palette:
     dim: Color  # secondary text
     alert: Color  # fault marks
     night: bool
+    climb: Color = (120, 230, 140)  # climbing
+    descend: Color = (255, 170, 60)  # descending
 
 
 DAY = Palette("day", fg=(255, 240, 215), dim=(140, 145, 160), alert=(255, 60, 40), night=False)
-NIGHT = Palette("night", fg=(255, 150, 20), dim=(110, 60, 0), alert=(190, 40, 0), night=True)
+NIGHT = Palette("night", fg=(255, 150, 20), dim=(110, 60, 0), alert=(190, 40, 0), night=True,
+                climb=(255, 150, 20), descend=(255, 150, 20))
 
 BLACK: Color = (0, 0, 0)
 

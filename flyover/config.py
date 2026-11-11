@@ -25,6 +25,10 @@ class ConfigError(ValueError):
     """The configuration file is missing, unreadable or has a bad value."""
 
 
+class LocationNotSet(RuntimeError):
+    """A location-based request was attempted while the coordinates are the 0, 0 placeholder."""
+
+
 @dataclass(frozen=True)
 class Location:
     latitude: float = 0.0

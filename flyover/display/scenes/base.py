@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from PIL import Image, ImageDraw
 
 from ...config import Config
+from ...models import FlightView
 from ...providers.weather import Weather
 from ...state import internet_down
 from ..theme import BLACK, DAY, Palette
@@ -32,8 +33,8 @@ class Context:
     weather: Weather | None = None
     net: Any = None  # parsed net.json, or None when absent
     palette: Palette = DAY
-    epoch: float = field(default_factory=time.time)  # unix time, for weather staleness
-    extra: dict[str, Any] = field(default_factory=dict)  # per-scene inputs (flights, QR)
+    epoch: float = field(default_factory=time.time)  # unix time: weather staleness, rotating text
+    flight: FlightView | None = None  # what the flight scene shows
 
     @property
     def offline(self) -> bool:

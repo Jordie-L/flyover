@@ -18,7 +18,14 @@ USER_AGENT = "pi-display-client/0.1"
 
 
 class HttpError(Exception):
-    """A request failed, or the reply was not usable JSON."""
+    """A request failed, or the reply was not usable JSON.
+
+    ``status`` is the HTTP status code when the server answered, else None.
+    """
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def get_json(url: str, *, timeout: float = 10.0, headers: dict[str, str] | None = None) -> Any:
@@ -29,7 +36,7 @@ def get_json(url: str, *, timeout: float = 10.0, headers: dict[str, str] | None 
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read()
     except urllib.error.HTTPError as exc:
-        raise HttpError(f"HTTP {exc.code} from {_host(url)}") from None
+        raise HttpError(f"HTTP {exc.code} from {_host(url)}", status=exc.code) from None
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         raise HttpError(f"cannot reach {_host(url)}: {reason}") from None

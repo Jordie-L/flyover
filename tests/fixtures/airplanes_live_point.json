@@ -1,0 +1,20 @@
+{
+  "ac": [
+    {"hex": "a1b2c3", "type": "adsb_icao", "flight": "UAL1234 ", "r": "N37290", "t": "B738",
+     "alt_baro": 2400, "alt_geom": 2550, "gs": 142.3, "track": 270.4, "baro_rate": -640,
+     "lat": 41.9000, "lon": -87.7000, "seen_pos": 0.4, "seen": 0.2},
+    {"hex": "~abcdef", "type": "tisb_other", "alt_baro": 3000, "gs": 90, "track": 10,
+     "lat": 41.91, "lon": -87.71, "seen_pos": 1.0},
+    {"hex": "A0FFEE", "flight": "N123AB  ", "r": "N123AB", "t": "C172", "alt_baro": "ground",
+     "gs": 0, "lat": 41.78, "lon": -87.75, "seen_pos": 3.0},
+    {"hex": "abcdef", "flight": "SWA77", "alt_baro": 35000, "gs": 451, "track": 45,
+     "baro_rate": 1800, "lat": 42.2, "lon": -87.3},
+    {"hex": "123456", "flight": "NOPOS1"},
+    {"hex": "654321", "flight": "NOALT1", "gs": 100, "lat": 41.9, "lon": -87.7}
+  ],
+  "msg": "No error",
+  "now": 1794369816000,
+  "total": 6,
+  "ctime": 1794369816000,
+  "ptime": 1
+}
