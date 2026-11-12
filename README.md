@@ -222,7 +222,9 @@ route_cache_days = 7       # how long a looked-up route is remembered
 
 [display]
 backend          = "auto"  # "auto", "matrix" or "preview"; auto uses the matrix when its library is installed
-brightness       = 60      # percent, daytime
+brightness       = 60      # percent, daytime (the maximum when auto_brightness is on)
+auto_brightness  = false   # by day, dim from this down to auto_brightness_min as the sun sets
+auto_brightness_min = 30   # percent; the dimmest daytime level (night_* still applies at night)
 night_brightness = 15      # percent
 night_start      = "22:00" # local time; dim and switch to amber
 night_end        = "07:00"
@@ -304,6 +306,7 @@ With no route found (private and military aircraft), the big line shows the regi
 | Connected to Wi-Fi but no internet | The normal screens with a small red Wi-Fi mark in the corner. |
 | Time not yet known | `--:--` in place of the clock. |
 | Night hours | Reduced brightness, amber only (the QR code stays black on white so phones can read it). |
+| Daylight dimming (optional) | With `auto_brightness = true`, daytime brightness follows the sun's height, worked out from the location and the clock (no network needed): `brightness` at full day, falling to `auto_brightness_min` through dusk. Night mode still uses `night_brightness`. |
 | Quiet hours | Panel off. Flight requests are paused. |
 
 ### Which plane is shown
