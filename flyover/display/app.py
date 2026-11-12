@@ -187,7 +187,8 @@ class DisplayApp:
         else:
             scene = self._choose_scene(ctx)
             scene_name, frame = scene.name, scene.render(ctx)
-        elevation = self._sun_elevation(cfg, ctx)
+        # Only the daytime level follows the sun; night and quiet hours never look at it.
+        elevation = self._sun_elevation(cfg, ctx) if mode == "day" else None
         brightness = brightness_for(mode, cfg.display, elevation)
         self.backend.show(frame, brightness)
         self._write_status(scene_name, mode, brightness, ctx)

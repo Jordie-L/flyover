@@ -363,3 +363,21 @@ def test_auto_brightness_reaches_the_floor_before_night_mode_starts(make_app, tm
     app.tick()
     status = read_json(tmp_path / "run" / "status.json")
     assert status["mode"] == "day" and status["brightness"] == 30
+
+
+def test_the_sun_is_only_computed_for_the_daytime_level(make_app, tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import flyover.display.app as app_module
+
+    tz = ZoneInfo("America/Chicago")
+    calls = []
+    monkeypatch.setattr(app_module.sun, "elevation_deg", lambda *args: calls.append(args) or 40.0)
+    config = (CONFIG + '[display]\nbrightness = 80\nauto_brightness = true\nauto_brightness_min = 30\n'
+              'night_brightness = 15\nnight_start = "21:00"\nnight_end = "06:00"\n')
+    app = make_app(config_text=config)
+    for hour in (23, 13):  # night first, then day
+        monkeypatch.setattr(app_module.clock, "now_in", lambda _tz, h=hour: datetime(2026, 11, 11, h, 0, tzinfo=tz))
+        app.tick()
+    assert len(calls) == 1  # only the daytime tick looked at the sun
+    assert read_json(tmp_path / "run" / "status.json")["brightness"] == 80

@@ -342,3 +342,27 @@ def test_host_names_for_a_device_on_the_lan_are_local(host):
 def test_public_host_names_are_not_local(host):
     from flyover.control.web import host_is_local
     assert not host_is_local(host)
+
+
+def test_daylight_dimming_is_switched_on_and_off_from_the_settings_page(stack):
+    assert "name=auto_brightness value=1>" in stack.client.get("/settings")[1]  # off, unticked
+    status, _, _ = stack.client.post("/settings", {"brightness": "80", "auto_brightness": "1",
+                                                   "auto_brightness_min": "25"})
+    assert status == 303
+    display = stack.app.config().display
+    assert display.auto_brightness and display.auto_brightness_min == 25
+    assert "name=auto_brightness value=1 checked>" in stack.client.get("/settings")[1]
+    stack.client.post("/settings", {"brightness": "80", "auto_brightness_min": "25"})  # box unticked
+    assert not stack.app.config().display.auto_brightness
+
+
+@pytest.mark.parametrize("data, fragment", [
+    ({"brightness": "20", "auto_brightness": "1", "auto_brightness_min": "30"}, "must not be more than brightness"),
+    ({"auto_brightness_min": "0"}, "auto_brightness_min"),
+    ({"auto_brightness_min": "dim"}, "auto brightness min must be a number"),
+])
+def test_bad_daylight_dimming_settings_are_refused_and_change_nothing(stack, data, fragment):
+    before = stack.config.read_text()
+    status, body, _ = stack.client.post("/settings", data)
+    assert status == 400 and fragment in body
+    assert stack.config.read_text() == before

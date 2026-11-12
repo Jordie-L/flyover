@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,7 @@ def test_value_formatting():
 
 def test_edits_a_value_in_place_and_keeps_its_comment():
     out = update_config_text(EXAMPLE, {("display", "brightness"): 80})
-    assert "brightness       = 80      # percent, daytime" in out
+    assert re.search(r"^brightness\s+= 80\s+# percent, daytime", out, re.M)  # value changed, comment kept
     assert parse_config(out).display.brightness == 80
 
 
@@ -108,3 +109,23 @@ def test_command_line_interface(tmp_path, capsys):
     assert config_edit.main([str(path)]) == 2
     with pytest.raises(SystemExit):
         config_edit.main([str(path), "nonsense"])
+
+
+def test_the_daylight_keys_are_added_to_a_config_written_before_they_existed():
+    """Every Pi installed earlier has a config.toml without them; the settings page must cope."""
+    old = ('[location]\nlatitude = 41.9\nlongitude = -87.6\n\n'
+           '[display]\nbrightness = 60   # percent\nnight_start = "22:00"\n\n[web]\nport = 80\n')
+    out = update_config_text(old, {("display", "auto_brightness"): True,
+                                   ("display", "auto_brightness_min"): 25})
+    cfg = parse_config(out)
+    assert cfg.display.auto_brightness and cfg.display.auto_brightness_min == 25
+    assert "brightness = 60   # percent" in out  # the existing line and its comment are untouched
+    assert out.index("auto_brightness_min = 25") < out.index("[web]")
+
+
+def test_editing_brightness_does_not_touch_the_keys_that_start_with_it():
+    text = "[display]\nbrightness = 80\nauto_brightness = true\nauto_brightness_min = 30\n"
+    out = update_config_text(text, {("display", "brightness"): 90})
+    assert out == "[display]\nbrightness = 90\nauto_brightness = true\nauto_brightness_min = 30\n"
+    out = update_config_text(text, {("display", "auto_brightness"): False})
+    assert out == "[display]\nbrightness = 80\nauto_brightness = false\nauto_brightness_min = 30\n"

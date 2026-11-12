@@ -136,6 +136,7 @@ Check:
 - **Flicker and ghosting:** README, "Picture quality" and Troubleshooting. Tune `gpio_slowdown`, `pwm_lsb_nanoseconds`, `limit_refresh_hz`, `pwm_bits`.
 - **Legibility at 2 to 4 m**, in daylight and at night, **behind the smoked acrylic**. The layouts in `display/scenes/` use fixed pixel positions; adjust them if something is too small, and regenerate snapshots (`UPDATE_SNAPSHOTS=1 pytest tests/test_scenes_app.py`). The 4 px font used for the hotspot name and password is the smallest; check it is readable.
 - **QR code scans** from a phone at normal distance. If not, raise brightness or enlarge the code (fewer error-correction bits are already used; a shorter hotspot name and password give a smaller code).
+- **Daylight dimming** (`auto_brightness = true`, off by default). Watch one dusk: brightness should fall smoothly from `brightness` to `auto_brightness_min` between sunset and the end of civil twilight, with no visible steps. Check the screens are still legible at the floor level behind the acrylic, and that night mode (amber, `night_brightness`) still takes over at `night_start`.
 - **Colours.** Day colours and the amber night palette are in `display/theme.py`; airline bar colours in `display/scenes/flight.py`.
 
 ### 5. Soak test
@@ -187,6 +188,7 @@ Decisions made without the user's input, in case you want to revisit them.
 | QR code black on white, always | Phone cameras need the contrast | Bright block on a dark panel at night |
 | No map picker, no web login, no update button, no notable-aircraft alerts | Each needs hosted assets, an auth design or real traffic data; listed under "Not built yet" in the README | Manual entry of coordinates |
 | Generic `User-Agent` | Nothing about the owner or project leaves the device | Some services like contact details; if one asks, add them deliberately |
+| Daylight dimming from the sun's height (worked out from the location and the clock), not a light sensor | No extra hardware and no network, and a panel behind acrylic on a wall has no good place for a sensor. The solar routine (`flyover/sun.py`) was checked against an independent library across 7 places and 6 dates: within 0.6 degrees, which moves the brightness by at most 2 points | It cannot see cloud or room lighting; a BH1750 sensor remains an option |
 | Daily overhead count in the status file | Cheap, and gives a way to judge radius tuning | Not shown on the panel |
 
 ## Working on the code

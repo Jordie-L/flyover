@@ -42,10 +42,16 @@ def test_sunrise_and_sunset_times_are_plausible_for_detroit_in_november():
     assert elevation(2026, 11, 11, 16, 45) > 0 > elevation(2026, 11, 11, 17, 45)
 
 
-def test_naive_and_aware_times_agree_when_the_system_zone_is_given():
+def test_an_aware_time_gives_the_same_elevation_in_any_zone():
     aware = datetime(2026, 7, 1, 15, 0, tzinfo=timezone.utc)
     assert sun.elevation_deg(10, 20, aware) == pytest.approx(
         sun.elevation_deg(10, 20, aware.astimezone(NY)), abs=1e-9)
+
+
+def test_a_naive_time_is_taken_as_the_system_local_time():
+    naive = datetime(2026, 7, 1, 12, 0)
+    assert sun.elevation_deg(10, 20, naive) == pytest.approx(
+        sun.elevation_deg(10, 20, naive.astimezone()), abs=1e-9)
 
 
 def test_the_southern_hemisphere_and_the_poles_do_not_break():
