@@ -52,6 +52,8 @@ class Flights:
 class Display:
     backend: str = "auto"
     brightness: int = 60
+    auto_brightness: bool = False
+    auto_brightness_min: int = 30
     night_brightness: int = 15
     night_start: str = "22:00"
     night_end: str = "07:00"
@@ -193,6 +195,10 @@ def _validate(cfg: Config) -> None:
     _require(1 <= d.brightness <= 100, "display", "brightness", "must be between 1 and 100")
     _require(0 <= d.night_brightness <= 100, "display", "night_brightness",
              "must be between 0 and 100")
+    _require(1 <= d.auto_brightness_min <= 100, "display", "auto_brightness_min",
+             "must be between 1 and 100")
+    _require(not d.auto_brightness or d.auto_brightness_min <= d.brightness, "display",
+             "auto_brightness_min", "must not be more than brightness")
     for key in ("night_start", "night_end"):
         _require(bool(_HHMM.match(getattr(d, key))), "display", key, 'must look like "22:00"')
     for key in ("quiet_start", "quiet_end"):

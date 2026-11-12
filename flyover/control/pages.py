@@ -121,7 +121,11 @@ def settings(cfg: Config, notice: str | None = None, error: str | None = None) -
         + _field("Brightness %", "brightness", d.brightness, kind="number", extra="min=1 max=100")
         + '</div><div>' + _field("Night brightness %", "night_brightness", d.night_brightness,
                                  kind="number", extra="min=0 max=100") + '</div></div>'
-        '<div class=row><div>' + _field("Night starts", "night_start", d.night_start, kind="time")
+        f'<label><input type=checkbox name=auto_brightness value=1{" checked" if d.auto_brightness else ""}>'
+        'Dim with the sun by day (Brightness is the maximum)</label>'
+        + _field("Dimmest by day %", "auto_brightness_min", d.auto_brightness_min, kind="number",
+                 extra="min=1 max=100")
+        + '<div class=row><div>' + _field("Night starts", "night_start", d.night_start, kind="time")
         + '</div><div>' + _field("Night ends", "night_end", d.night_end, kind="time") + '</div></div>'
         '<div class=row><div>' + _field("Off from", "quiet_start", d.quiet_start, "optional", "time")
         + '</div><div>' + _field("Off until", "quiet_end", d.quiet_end, "optional", "time") + '</div></div>'

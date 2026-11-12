@@ -193,7 +193,7 @@ Everything specific to one installation lives in `/etc/flyover/config.toml`. Not
 | Hotspot name and password | `[hotspot] ssid`, `password` | The installer generates the password. Change the name if you like. |
 | How far out to look | `[flights] radius_km`, `max_altitude_ft` | Tune after watching a few passes. |
 | Units and clock style | `[display] temperature_unit`, `distance_unit`, `clock_24h` | To taste. |
-| Brightness and night hours | `[display] brightness`, `night_*`, `quiet_*` | To taste. |
+| Brightness and night hours | `[display] brightness`, `auto_brightness*`, `night_*`, `quiet_*` | To taste. `auto_brightness = true` dims the daytime level as the sun sets. |
 | Matrix wiring | `[matrix] hardware_mapping` | Only if you fitted the PWM jumper. |
 | Matrix timing | `[matrix] gpio_slowdown` and the other timing keys | Only if the picture flickers or ghosts. |
 
@@ -221,16 +221,18 @@ poll_active_s    = 5       # seconds between requests when a plane is near
 route_cache_days = 7       # how long a looked-up route is remembered
 
 [display]
-backend          = "auto"  # "auto", "matrix" or "preview"; auto uses the matrix when its library is installed
-brightness       = 60      # percent, daytime
-night_brightness = 15      # percent
-night_start      = "22:00" # local time; dim and switch to amber
-night_end        = "07:00"
-quiet_start      = ""      # optional; panel fully off between these times
-quiet_end        = ""
-clock_24h        = false
-temperature_unit = "F"     # "F" or "C"
-distance_unit    = "mi"    # "mi" or "km"; altitude is always feet and speed always knots
+backend             = "auto"  # "auto", "matrix" or "preview"; auto uses the matrix when its library is installed
+brightness          = 60      # percent, daytime (the maximum when auto_brightness is on)
+auto_brightness     = false   # by day, dim from this down to auto_brightness_min as the sun sets
+auto_brightness_min = 30      # percent; the dimmest daytime level (night_* still applies at night)
+night_brightness    = 15      # percent
+night_start         = "22:00" # local time; dim and switch to amber
+night_end           = "07:00"
+quiet_start         = ""      # optional; panel fully off between these times
+quiet_end           = ""
+clock_24h           = false
+temperature_unit    = "F"     # "F" or "C"
+distance_unit       = "mi"    # "mi" or "km"; altitude is always feet and speed always knots
 
 [matrix]
 rows                = 64
@@ -304,6 +306,7 @@ With no route found (private and military aircraft), the big line shows the regi
 | Connected to Wi-Fi but no internet | The normal screens with a small red Wi-Fi mark in the corner. |
 | Time not yet known | `--:--` in place of the clock. |
 | Night hours | Reduced brightness, amber only (the QR code stays black on white so phones can read it). |
+| Daylight dimming (optional) | With `auto_brightness = true`, daytime brightness follows the sun's height, worked out from the location and the clock (no network needed): `brightness` at full day, falling to `auto_brightness_min` through dusk. Night mode still uses `night_brightness`. |
 | Quiet hours | Panel off. Flight requests are paused. |
 
 ### Which plane is shown

@@ -40,6 +40,7 @@ _SETTINGS = {
     "radius_km": ("flights", "radius_km", float),
     "max_altitude_ft": ("flights", "max_altitude_ft", int),
     "brightness": ("display", "brightness", int),
+    "auto_brightness_min": ("display", "auto_brightness_min", int),
     "night_brightness": ("display", "night_brightness", int),
     "night_start": ("display", "night_start", str),
     "night_end": ("display", "night_end", str),
@@ -106,6 +107,7 @@ class ControlApp:
             except ValueError:
                 raise ConfigError(f"{name.replace('_', ' ')} must be a number") from None
         values[("display", "clock_24h")] = form.get("clock_24h") == "1"  # an unchecked box is absent
+        values[("display", "auto_brightness")] = form.get("auto_brightness") == "1"
 
         changes = {(sec, key): v for (sec, key), v in values.items()
                    if getattr(getattr(current, sec), key) != v}

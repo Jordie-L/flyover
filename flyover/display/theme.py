@@ -69,11 +69,34 @@ def mode_for(now: datetime, time_trusted: bool, cfg: Display) -> str:
     return "day"
 
 
-def brightness_for(mode: str, cfg: Display) -> int:
-    """Panel brightness in percent for ``mode``."""
+#: Sun elevation (degrees) at and below which the daytime panel is at its dimmest (the end of
+#: civil twilight) and at and above which it is at full ``brightness``. In between it follows a
+#: smooth curve, so dimming starts at sunset and finishes at dusk, and the reverse at sunrise.
+SUN_DIM_DEG = -6.0
+SUN_FULL_DEG = 15.0
+
+
+def daylight_brightness(elevation_deg: float, low: int, high: int) -> int:
+    """Brightness in percent between ``low`` and ``high`` for the sun's elevation."""
+    x = (elevation_deg - SUN_DIM_DEG) / (SUN_FULL_DEG - SUN_DIM_DEG)
+    x = min(1.0, max(0.0, x))
+    return round(low + (high - low) * x * x * (3 - 2 * x))  # smoothstep: no kinks at the ends
+
+
+def brightness_for(mode: str, cfg: Display, sun_elevation: float | None = None) -> int:
+    """Panel brightness in percent for ``mode``.
+
+    By day with ``auto_brightness`` on, ``brightness`` is the maximum and the level follows the
+    sun down to ``auto_brightness_min``. Night mode keeps ``night_brightness``. Without a known
+    elevation (no location, or the clock is not trusted) the fixed ``brightness`` is used.
+    """
     if mode == "off":
         return 0
-    return cfg.night_brightness if mode == "night" else cfg.brightness
+    if mode == "night":
+        return cfg.night_brightness
+    if cfg.auto_brightness and sun_elevation is not None:
+        return daylight_brightness(sun_elevation, cfg.auto_brightness_min, cfg.brightness)
+    return cfg.brightness
 
 
 def apply_palette(icon: Image.Image, palette: Palette) -> Image.Image:

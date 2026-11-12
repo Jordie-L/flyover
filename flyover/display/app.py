@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from .. import __version__, clock, geo
+from .. import __version__, clock, geo, sun
 from ..config import Config, ConfigStore, LocationNotSet
 from ..models import FlightView
 from ..providers import weather
@@ -187,9 +187,18 @@ class DisplayApp:
         else:
             scene = self._choose_scene(ctx)
             scene_name, frame = scene.name, scene.render(ctx)
-        brightness = brightness_for(mode, cfg.display)
+        # Only the daytime level follows the sun; night and quiet hours never look at it.
+        elevation = self._sun_elevation(cfg, ctx) if mode == "day" else None
+        brightness = brightness_for(mode, cfg.display, elevation)
         self.backend.show(frame, brightness)
         self._write_status(scene_name, mode, brightness, ctx)
+
+    @staticmethod
+    def _sun_elevation(cfg: Config, ctx: Context) -> float | None:
+        """The sun's elevation, only when it is needed and can be trusted."""
+        if not (cfg.display.auto_brightness and cfg.location_is_set and ctx.time_trusted):
+            return None
+        return sun.elevation_deg(cfg.location.latitude, cfg.location.longitude, ctx.now)
 
     def _write_status(self, scene: str, mode: str, brightness: int, ctx: Context) -> None:
         w = self._weather.latest

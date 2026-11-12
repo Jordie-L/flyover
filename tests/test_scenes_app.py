@@ -323,3 +323,61 @@ def test_a_persistent_failure_is_logged_once_not_twice_a_second(make_app, monkey
         stop.set()
         thread.join(5)
     assert caplog.text.count("frame failed") == 1
+
+
+@pytest.mark.parametrize(
+    "hour, trusted, expected",
+    [(13, True, 80), (16, True, None), (13, False, 80)],  # None: somewhere between the two ends
+)
+def test_auto_brightness_follows_the_sun_by_day(make_app, tmp_path, monkeypatch, hour, trusted, expected):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import flyover.display.app as app_module
+
+    tz = ZoneInfo("America/Chicago")
+    monkeypatch.setattr(app_module.clock, "now_in",
+                        lambda _tz: datetime(2026, 11, 11, hour, 40, tzinfo=tz))
+    config = (CONFIG + '[display]\nbrightness = 80\nauto_brightness = true\nauto_brightness_min = 30\n'
+              'night_start = "21:00"\nnight_end = "06:00"\n')
+    app = make_app(config_text=config, time_trusted=lambda: trusted)
+    app.tick()
+    brightness = read_json(tmp_path / "run" / "status.json")["brightness"]
+    if expected is None:
+        assert 30 < brightness < 80  # dusk: dimming, but not yet at the floor
+    elif trusted:
+        assert brightness == expected  # noon-ish: full
+    else:
+        assert brightness == 80  # an untrusted clock cannot place the sun: the fixed level
+
+
+def test_auto_brightness_reaches_the_floor_before_night_mode_starts(make_app, tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import flyover.display.app as app_module
+
+    tz = ZoneInfo("America/Chicago")
+    monkeypatch.setattr(app_module.clock, "now_in", lambda _tz: datetime(2026, 11, 11, 19, 30, tzinfo=tz))
+    config = (CONFIG + '[display]\nbrightness = 80\nauto_brightness = true\nauto_brightness_min = 30\n'
+              'night_start = "21:00"\nnight_end = "06:00"\n')
+    app = make_app(config_text=config)
+    app.tick()
+    status = read_json(tmp_path / "run" / "status.json")
+    assert status["mode"] == "day" and status["brightness"] == 30
+
+
+def test_the_sun_is_only_computed_for_the_daytime_level(make_app, tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import flyover.display.app as app_module
+
+    tz = ZoneInfo("America/Chicago")
+    calls = []
+    monkeypatch.setattr(app_module.sun, "elevation_deg", lambda *args: calls.append(args) or 40.0)
+    config = (CONFIG + '[display]\nbrightness = 80\nauto_brightness = true\nauto_brightness_min = 30\n'
+              'night_brightness = 15\nnight_start = "21:00"\nnight_end = "06:00"\n')
+    app = make_app(config_text=config)
+    for hour in (23, 13):  # night first, then day
+        monkeypatch.setattr(app_module.clock, "now_in", lambda _tz, h=hour: datetime(2026, 11, 11, h, 0, tzinfo=tz))
+        app.tick()
+    assert len(calls) == 1  # only the daytime tick looked at the sun
+    assert read_json(tmp_path / "run" / "status.json")["brightness"] == 80
